@@ -1,3 +1,16 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/banner-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/readme/banner-light.svg">
+  <img src="docs/images/readme/banner-light.svg" alt="os-trafficpriority - Strict priority for chosen traffic, where it actually flows" width="100%">
+</picture>
+
+<p align="center">
+  <img alt="status: planned" src="https://img.shields.io/badge/status-planned-lightgrey.svg?style=flat-square">
+  <a href="https://github.com/AbdelmonemAwad/os-trafficpriority/actions/workflows/checks.yml"><img alt="checks on main" src="https://img.shields.io/github/actions/workflow/status/AbdelmonemAwad/os-trafficpriority/checks.yml?branch=main&amp;style=flat-square&amp;label=checks"></a>
+  <a href="LICENSE"><img alt="licence: BSD-2-Clause" src="https://img.shields.io/badge/licence-BSD--2--Clause-blue.svg?style=flat-square"></a>
+  <a href="https://github.com/AbdelmonemAwad/os-xgs-npu"><img alt="part of os-xgs-npu" src="https://img.shields.io/badge/part%20of-os--xgs--npu-9a6700.svg?style=flat-square"></a>
+</p>
+
 # Traffic Priority for OPNsense
 
 Strict priority for chosen traffic - voice, games, the firewall's own management - applied where that traffic actually flows: in the queues of a Sophos XGS's coprocessor and of its switch, which forwarded traffic never leaves.

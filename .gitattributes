@@ -4,3 +4,14 @@
 # command and an rc script would fail in a way nobody would guess from the error.
 * text=auto eol=lf
 *.png binary
+
+# What an appliance would carry is the archive of a commit, and nothing it does not read goes into it: the
+# documentation, the workflows and the files about the project itself - as in os-blocklists. Nothing here is
+# installed yet; a file an appliance starts to read leaves this list in the same change.
+docs/ export-ignore
+.github/ export-ignore
+CODE_OF_CONDUCT.md export-ignore
+CONTRIBUTING.md export-ignore
+SECURITY.md export-ignore
+tools/ export-ignore
+/README.md export-ignore
