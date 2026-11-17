@@ -88,8 +88,9 @@
         /*
          * Four cards: on or off, the classes switched on that pf holds rules for - and when pf refused the
          * last rule set, or this OPNsense writes no mark, that instead - the connections pf holds now with
-         * a class's mark, each once (status.py's marked), and the switch's queues - not measured yet, so
-         * nothing is set there.
+         * a mark set coming in, each once, while a class marks - pfctl shows that a mark is set, not
+         * which one (status.py's marked) - and the switch's queues - not measured yet, so nothing is set
+         * there.
          */
         function draw(data) {
             const $cards = $('#tp-cards').empty();
@@ -110,7 +111,7 @@
                     data.writes_mark === false ? "{{ lang._('this OPNsense writes no mark on a rule') }}" :
                     data.refused ? "{{ lang._('last rule set refused by pf') }}" : "{{ lang._('classes with rules loaded') }}"));
             $cards.append(card('', 'fa-link', "{{ lang._('Marked now') }}", count(data.marked),
-                "{{ lang._('connections with the DSCP of a class, each once') }}"));
+                "{{ lang._('connections with a mark set coming in, each once') }}"));
             $cards.append(card('', 'fa-sitemap', "{{ lang._('Switch queues') }}", "{{ lang._('not measured yet') }}",
                 "{{ lang._('DSCP written; no queue set') }}"));
             $('#tp-refused').toggle(!!data.refused);
@@ -274,7 +275,7 @@
             {{ lang._('Not in pf: class saved and not applied yet, or Traffic Priority off. Written, not loaded: the last filter reload wrote its rules and pf does not hold them. Not placed: OPNsense wrote its rule commented out - an interface not there, an address or a port it could not map.') }}
         </div>
         <div class="text-muted" style="padding: 0 15px 10px;">
-            {{ lang._('Matched now, Matched since reload, packets and bytes: what pf counted for the rules of each class. Every filter reload, an Apply among them, starts them again from 0 - packets and bytes too, unless the firewall keeps counters - while connections keep their mark; and a connection two classes match is counted under both, keeping the mark of the lower sequence. Marked now, above, counts each connection pf holds with the DSCP of a class once, whenever it opened.') }}
+            {{ lang._('Matched now, Matched since reload, packets and bytes: what pf counted for the rules of each class. Every filter reload, an Apply among them, starts them again from 0 - packets and bytes too, unless the firewall keeps counters - while connections keep their mark; and a connection two classes match is counted under both, keeping the mark of the lower sequence. Marked now, above, counts each connection pf holds with a mark set coming in, once, whenever it opened, while a class marks. pfctl shows that a mark is set, not which one, so a normalization rule of yours setting any mark on connections coming in is counted too.') }}
         </div>
         <div id="tp-project" class="text-muted" style="display: none; padding: 0 15px 15px;">
             {{ lang._('os-xgs-npu is installed: it puts a marked IPv4 connection into hardware with its DSCP and keeps a marked IPv6 connection with the host - measured with a normalization rule, not yet with these rules. A connection in hardware adds no more packets or bytes here.') }}

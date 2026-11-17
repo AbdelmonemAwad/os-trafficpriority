@@ -49,12 +49,14 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
   packets and bytes it saw, and - when a class makes no rule - why. Those counts are pf's for the
   rules loaded by the last filter reload, so every reload, an Apply among them, starts them again
   from 0, while connections keep their mark; a connection that two classes match is counted under
-  both. The card above them, **Marked now**, counts each connection pf holds with a class's DSCP
-  once, coming in, whenever it opened (`pfctl -v -s states`); an owner's normalization rule that sets
-  the same DSCP on connections coming in is counted with them, as pf does not say which rule set a
-  mark. When pf refused the rule set of the last filter reload, or the running OPNsense has no key to
-  write the mark with, the page says so rather than that nothing was applied yet. The switch's queue
-  is "not measured yet" for every class;
+  both. The card above them, **Marked now**, counts each connection pf holds with a mark set coming
+  in, once, whenever it opened, while a class marks (`pfctl -v -s states`). pfctl shows that a mark
+  is set, not which one: on FreeBSD 15.1 it reads the states over netlink, whose export carries the
+  state's flags and not its TOS byte (`pf_nl.c:148-230`), so it prints every mark as `set-tos 0x00` -
+  as an XGS 3300 on OPNsense 26.7.9 showed, a class's EF on the wire. So an owner's normalization
+  rule setting any mark on connections coming in is counted too. When pf refused the rule set of the
+  last filter reload, or the running OPNsense has no key to write the mark with, the page says so
+  rather than that nothing was applied yet. The switch's queue is "not measured yet" for every class;
 - **General** - Enabled, **off by default**: nothing is marked until it is switched on and Applied.
 
 Off, the rules are gone at the next filter reload; the classes stay.
@@ -195,10 +197,11 @@ On 2026-11-17, from this branch, nothing installed on any firewall:
   any field of it changed, and the message of OPNsense's own field type kept where it gave one; the
   status the page is given, an OPNsense with no key for the mark said, why each class makes no rule,
   and Apply's filter reload;
-- **the page's numbers** - `tools/test-status.py`, 33 checks: `status.py` reading a `rules.debug`, a
+- **the page's numbers** - `tools/test-status.py`, 36 checks: `status.py` reading a `rules.debug`, a
   `pfctl -v -s rules` and a `pfctl -v -s states` as OPNsense and pfctl write them, by each class's
-  label - a connection marked counted once, coming in, with the mark of a class pf holds rules for -
-  and a rule set pf refused told by `/tmp/rules.error`'s time;
+  label - a connection with a mark set coming in counted once, the mark printed `set-tos 0x00` as
+  pfctl prints every one, one going out or with no mark not counted, and nothing while no class
+  marks - and a rule set pf refused told by `/tmp/rules.error`'s time;
 - **the self-update** - `tools/test-self-update.py`, 45 checks, as os-blocklists has it;
 - **the strings** - `tools/check-strings.py`: each of the 117 strings the GUI shows - the page, the
   dialog's labels, help and the DSCPs' names, the model's messages, the menu, the ACL and the PHP's -
@@ -215,9 +218,9 @@ On 2026-11-17, from this branch, nothing installed on any firewall:
   private, no Arabic in the code, the page kit.
 
 30 behaviours those tests cover were taken out in turn, on a copy, and the tests failed on each.
-Later that day a review's fixes, and the behaviours newly tested, were taken out the same way, 70
+Later that day a review's fixes, and the behaviours newly tested, were taken out the same way, 75
 of them - in Marking, the hook, the model, the page's API, `status.py`, the strings check, the
-install scripts and `place-menu.sh` - and the tests caught 69. The one left changes nothing: without
+install scripts and `place-menu.sh` - and the tests caught 74. The one left changes nothing: without
 its own `rm` of the menu file, `uninstall.sh`'s `rm -rf` of the model's directory takes the file
 with it.
 

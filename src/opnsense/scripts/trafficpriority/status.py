@@ -7,9 +7,9 @@
 What the page shows, as one JSON object: whether Traffic Priority is on and, for each class, what pf was
 given for it at the last filter reload (/tmp/rules.debug) and what pf holds now (pfctl -v -s rules) -
 its rules, found by their label, and what pf counted for them since that reload; whether pf refused
-the rule set of that reload; how many connections pf holds now with the mark of a class, each once
-(pfctl -v -s states); and whether os-xgs-npu is installed, whose drivers carry a connection's mark
-into hardware.
+the rule set of that reload; how many connections pf holds now with a mark set coming in, each once,
+while a class marks (pfctl -v -s states, which shows that a mark is set, not which one); and whether
+os-xgs-npu is installed, whose drivers carry a connection's mark into hardware.
 
     status.py
 
@@ -36,10 +36,15 @@ LABELED = re.compile(r'label "' + LABEL + r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}
 COUNTERS = re.compile(r'^\s+\[ Evaluations: (\d+)\s+Packets: (\d+)\s+Bytes: (\d+)\s+States: (\d+)\s*\]')
 CREATED = re.compile(r'^\s+\[ Inserted: .*State Creations: (\d+)\s*\]')
 # pfctl -v -s states prints a line for each state - its interface, protocol and addresses, "<-" for
-# one made coming in, "->" going out - and one beneath it with what pf does to its packets, the mark
-# among them (pf_print_state.c:226-280, 342-383 in FreeBSD 15.1). pf keeps no note of which rules a
-# state matched (pf_nl.c:148-230, its state export), only what they set on it.
-SET_TOS = re.compile(r', set-tos (0x[0-9a-f]{2})\b')
+# one made coming in, "->" going out - and one beneath it with what pf does to its packets
+# (pf_print_state.c:226-280, 342-402 in FreeBSD 15.1). For a state pf marks it prints ", set-tos",
+# but not the state's mark: pfctl reads the states through libpfctl over netlink, whose state export
+# carries the state's flags, PFSTATE_SETTOS among them, and not the TOS byte the mark sets
+# (pf_nl.c:148-230, the flags at 190); libpfctl leaves that byte at 0, so every marked state is
+# printed ", set-tos 0x00" (pf_print_state.c:382-383). Only the ioctl and pfsync exports carry it
+# (pf_ioctl.c:5931, 5965, 6105). Nor does pf keep a note of which rules a state matched - only what
+# they set on it, a normalization rule's mark too (pf.c:6288).
+MARKED = re.compile(r', set-tos 0x[0-9a-f]{2}\b')
 # os-xgs-npu's model: where it is installed, its drivers give a connection in hardware its pf mark
 PROJECT = '/usr/local/opnsense/mvc/app/models/OPNsense/XGS/XGS.xml'
 
@@ -121,23 +126,27 @@ def loaded(text):
 
 
 def marked(text, marks):
-    """How many connections pf holds now with one of the marks given, each once, from pfctl -v -s
-    states: the states made coming in that set one of those TOS bytes. A class's rules mark the state
-    a connection makes where it comes in (match in); the state it makes going out carries no mark of
-    theirs, so a connection is counted once, however many classes matched it, and whenever it opened -
-    a filter reload leaves states and their marks as they are. A normalization rule of the owner's that
-    sets one of the same marks on connections coming in is counted too: pf does not say which rule
-    set it. None when pf could not be asked."""
+    """How many connections pf holds now with a mark set coming in, each once, while a class marks -
+    from pfctl -v -s states: the states made coming in that pfctl shows with ", set-tos". pfctl shows
+    that a mark is set, not which one: the state export it reads carries the flag and not the value
+    (pf_nl.c:148-230; libpfctl leaves the value at 0), so the classes' marks cannot be told apart from
+    one another, nor from the owner's - a normalization rule setting any mark on connections coming in
+    is counted too. A class's rules mark the state a connection makes where it comes in (match in);
+    the state it makes going out carries no mark of theirs, so a connection is counted once, however
+    many classes matched it, and whenever it opened - a filter reload leaves states and their marks as
+    they are. marks are those of the classes pf holds rules for: with none, no class marks, and the
+    count is 0. None when pf could not be asked."""
     if text is None:
         return None
+    if not marks:
+        return 0
     count = 0
     inbound = False
     for line in text.splitlines():
         if not line[:1].isspace():
             inbound = ' <- ' in line
             continue
-        found = SET_TOS.findall(line)
-        if inbound and found and found[-1] in marks:
+        if inbound and MARKED.search(line):
             count += 1
             inbound = False
     return count
@@ -175,7 +184,8 @@ def status(config=None, rules=None, pf_text=None, project=None, states=None, err
                       'created': 0})
         entry.update((lines or {}).get(entry['uuid'], {}))
         entry.update(held.get(entry['uuid'], {}))
-    # the marks of the classes pf holds rules for, each once
+    # the marks of the classes pf holds rules for: whether one of them marks at all is what counts, as
+    # pfctl does not show which mark a state has (MARKED)
     marks = {tos(entry['dscp']) for entry in classes if entry['rules']} - {None}
     return {
         'enabled': on,

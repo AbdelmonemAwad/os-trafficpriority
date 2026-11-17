@@ -5,9 +5,10 @@
 classes, the rules the last filter reload loaded (/tmp/rules.debug, its lines as test-rules.php has
 OPNsense's FilterRule write them), pf's rules with their counters (pfctl -v -s rules, as FreeBSD
 15.1's pfctl.c and pfctl_parser.c print them), pf's states (pfctl -v -s states, as its
-pf_print_state.c prints them) and /tmp/rules.error. Each class is found by its label alone, a rule
-written commented out is not one placed, and another rule's counters are never added to a class's;
-a connection is counted as marked once, coming in, with the mark of a class pf holds rules for; and
+pf_print_state.c prints them - every mark as 0x00, the value not being in the state export pfctl
+reads, as an XGS 3300 on 26.7.9 showed) and /tmp/rules.error. Each class is found by its label alone,
+a rule written commented out is not one placed, and another rule's counters are never added to a
+class's; a connection pf marked coming in is counted once, when a class pf holds rules for marks; and
 a rule set pf refused is told from one it took by the two files' times.
 
     python3 tools/test-status.py"""
@@ -82,22 +83,32 @@ pass in quick on igb1 inet from 192.168.1.0/24 to any flags S/SA keep state labe
   [ Inserted: uid 0 pid 51234 State Creations: 5     ]
 """ % {'u1': U1}
 
-# pfctl -v -s states, as pf_print_state.c prints each state: a call to the firewall marked EF coming in
-# on the LAN, and its way out over the WAN, which an owner's normalization rule marked going out; a
-# connection with Video's mark (Video has no rule in pf), one with Bulk's (Bulk is off), one with no
-# mark, and a DNS query marked EF coming in, more options after the mark
+# pfctl -v -s states as FreeBSD 15.1's pfctl prints them: a marked state as ", set-tos 0x00", whatever
+# its mark - pfctl reads the states over netlink, whose export carries the flag and not the value (an
+# XGS 3300 on 26.7.9, 2026-11-17: a class's EF on the wire, 0xb8, and "set-tos 0x00" on its three
+# states). A call to the firewall marked coming in on the LAN, and its way out over the WAN, marked
+# going out by an owner's normalization rule; two connections coming in with no mark; and a DNS query
+# marked coming in, more options after the mark.
 STATES = """all udp 192.168.1.1:5060 <- 192.168.1.20:5060       MULTIPLE:MULTIPLE
-   age 00:01:12, expires in 00:01:00, 120:118 pkts, 24000:23600 bytes, rule 105, set-tos 0xb8
+   age 00:01:12, expires in 00:01:00, 120:118 pkts, 24000:23600 bytes, rule 105, set-tos 0x00
 all udp 198.51.100.7:5060 (192.168.1.20:5060) -> 203.0.113.9:5060       MULTIPLE:MULTIPLE
-   age 00:01:12, expires in 00:01:00, 120:118 pkts, 24000:23600 bytes, rule 98, set-tos 0xb8
+   age 00:01:12, expires in 00:01:00, 120:118 pkts, 24000:23600 bytes, rule 98, set-tos 0x00
 all tcp 192.168.1.1:443 <- 192.168.1.30:51000       ESTABLISHED:ESTABLISHED
-   age 00:10:00, expires in 23:59:59, 500:400 pkts, 50000:400000 bytes, rule 110, rlabel 02f4bab031b57d1e30553ce08e0ec131, set-tos 0x88
-all tcp 203.0.113.9:443 <- 192.168.1.31:51001       ESTABLISHED:ESTABLISHED
-   age 00:10:00, expires in 23:59:59, 5:4 pkts, 500:400 bytes, rule 110, set-tos 0x20
+   age 00:10:00, expires in 23:59:59, 500:400 pkts, 50000:400000 bytes, rule 110, rlabel 02f4bab031b57d1e30553ce08e0ec131
 all icmp 192.168.1.1:3 <- 192.168.1.40:3       0:0
    age 00:00:05, expires in 00:00:05, 1:1 pkts, 84:84 bytes, rule 110
 igb1 udp 192.168.1.1:53 <- 192.168.1.41:5353       SINGLE:MULTIPLE
-   age 00:00:05, expires in 00:00:25, 1:1 pkts, 70:120 bytes, rule 110, allow-opts, set-tos 0xb8, max-mss 1400
+   age 00:00:05, expires in 00:00:25, 1:1 pkts, 70:120 bytes, rule 110, allow-opts, set-tos 0x00, max-mss 1400
+"""
+# one state each, as the lab's: coming in marked, coming in not marked, going out marked
+IN_MARKED = """all udp 192.168.1.1:5321 <- 192.168.1.20:40000       MULTIPLE:MULTIPLE
+   age 00:00:30, expires in 00:01:00, 3000:0 pkts, 4200000:0 bytes, rule 105, set-tos 0x00
+"""
+IN_PLAIN = """all udp 192.168.1.1:5321 <- 192.168.1.20:40000       MULTIPLE:MULTIPLE
+   age 00:00:30, expires in 00:01:00, 3000:0 pkts, 4200000:0 bytes, rule 105
+"""
+OUT_MARKED = """all udp 198.51.100.7:5321 (192.168.1.20:40000) -> 203.0.113.9:5321       MULTIPLE:MULTIPLE
+   age 00:00:30, expires in 00:01:00, 3000:0 pkts, 4200000:0 bytes, rule 98, set-tos 0x00
 """
 
 check('os-xgs-npu is looked for where it installs its model', status.PROJECT,
@@ -133,10 +144,13 @@ with tempfile.TemporaryDirectory() as tmp:
     check('pf: nothing in an empty answer', status.loaded(''), {})
     check('pf: nothing when pf could not be asked', status.loaded(None), {})
 
-    check('pf states: marked coming in with EF, each connection once', status.marked(STATES, {'0xb8'}), 2)
-    check('pf states: with EF or AF41', status.marked(STATES, {'0xb8', '0x88'}), 3)
-    check('pf states: none with a mark of no class', status.marked(STATES, set()), 0)
-    check('pf states: nothing when pf could not be asked', status.marked(None, {'0xb8'}), None)
+    check('pf states: a state coming in, shown with set-tos 0x00, counted', status.marked(IN_MARKED, {'0xb8'}), 1)
+    check('pf states: a state coming in with no set-tos, not counted', status.marked(IN_PLAIN, {'0xb8'}), 0)
+    check('pf states: a state going out with set-tos, not counted', status.marked(OUT_MARKED, {'0xb8'}), 0)
+    check('pf states: each connection marked coming in counted once, whatever the class\'s mark',
+          [status.marked(STATES, marks) for marks in ({'0xb8'}, {'0x88'}, {'0x00'}, {'0xb8', '0x20'})], [2, 2, 2, 2])
+    check('pf states: no class marking, 0', (status.marked(STATES, set()), status.marked(IN_MARKED, set())), (0, 0))
+    check('pf states: pf not asked, nothing', (status.marked(None, {'0xb8'}), status.marked(None, set())), (None, None))
 
     got = status.status(config, rules, PF, project, STATES, errors)
     rows = {c['uuid']: c for c in got['classes']}
@@ -149,8 +163,10 @@ with tempfile.TemporaryDirectory() as tmp:
           {k: rows[U2][k] for k in ('enabled', 'written', 'rules', 'states')},
           {'enabled': False, 'written': 0, 'rules': 0, 'states': 0})
     check('status: Video not placed, not in pf', (rows[U3]['not_placed'], rows[U3]['rules']), (1, 0))
-    check('status: marked now, each once, with the mark of a class pf holds rules for (Voice\'s, not '
-          'Video\'s or Bulk\'s) - not the 4 its rules count', got['marked'], 2)
+    check('status: marked now, each connection pf marked coming in once - not the 4 Voice\'s rules count',
+          got['marked'], 2)
+    check('status: no class in pf, so none marking: 0, whatever pf marked',
+          status.status(config, rules, '', project, STATES, errors)['marked'], 0)
     check('status: pf not asked for its states: no count', status.status(config, rules, PF, project, None, errors)['marked'],
           None)
 
