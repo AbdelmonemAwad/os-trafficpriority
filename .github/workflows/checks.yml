@@ -33,6 +33,17 @@ permissions:
   contents: read
 
 jobs:
+  signed-releases:
+    name: signed releases
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # A release is installed only as its owner signed it (SIGNED RELEASES in self-update.py):
+      # what a check takes and refuses, and what an update installs. OpenSSL is the runner's.
+      - name: self-update.py takes a release only as signed
+        run: python3 tools/test-self-update.py
+
   rules:
     name: rules
     runs-on: ubuntu-latest
@@ -71,6 +82,10 @@ jobs:
       # status.py's reading of the rules pf was given and of pf's own counters, by each class's label.
       - name: The page says what pf holds of each class
         run: python3 tools/test-status.py
+
+      # install/install.sh copies src/ whole; install/uninstall.sh names what it removes.
+      - name: Every file the installer lays down is removed by the uninstaller
+        run: sh tools/check-uninstall.sh .
 
   syntax:
     name: syntax
