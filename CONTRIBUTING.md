@@ -15,7 +15,10 @@ It is one part of the [os-xgs-npu](https://github.com/AbdelmonemAwad/os-xgs-npu)
 - **Every string on a page has its Arabic** in
   [opnsense-arabic](https://github.com/AbdelmonemAwad/opnsense-arabic)'s catalogue. If you do not write
   Arabic, leave it out: a pull request that adds or changes a menu entry, a form's label or help, or a
-  new page is merged without it, and the string shows in English until its Arabic follows.
+  new page is merged without it, and the string shows in English until its Arabic follows. Do list
+  the string in `src/opnsense/scripts/trafficpriority/i18n/ui/source.json`: `tools/check-strings.py`
+  reads every string the GUI shows - the page, the forms, the model's messages and options, the menu,
+  the ACL and the PHP's `gettext()` - and fails on one that is not listed there.
 
 ## Copyright, and what a contribution agrees to
 

@@ -200,6 +200,10 @@ On 2026-11-17, from this branch, nothing installed on any firewall:
   label - a connection marked counted once, coming in, with the mark of a class pf holds rules for -
   and a rule set pf refused told by `/tmp/rules.error`'s time;
 - **the self-update** - `tools/test-self-update.py`, 45 checks, as os-blocklists has it;
+- **the strings** - `tools/check-strings.py`: each of the 117 strings the GUI shows - the page, the
+  dialog's labels, help and the DSCPs' names, the model's messages, the menu, the ACL and the PHP's -
+  is listed in `source.json`; 29 of them had their Arabic in opnsense-arabic that day, and the others
+  are to follow there;
 - **the rest of the checks** - every installed file removed by the uninstaller
   (`tools/check-uninstall.sh`), `php -l`, `py_compile` and pyflakes, `sh -n`, XML and JSON, nothing
   private, no Arabic in the code, the page kit.

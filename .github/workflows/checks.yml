@@ -14,8 +14,8 @@ name: checks
 #   * a template that no longer compiles, which takes the whole page to the crash
 #     reporter and tells the reader nothing;
 #   * a shell script or Python file with a syntax error, found after it was installed;
-#   * a string added to the page or to a data file and never translated, which shows
-#     up as one English sentence in the middle of an Arabic page;
+#   * a string added to the page, a form, the model, the menu or a data file and never
+#     translated, which shows up as one English sentence in the middle of an Arabic page;
 #   * an address from the machine this was written on, left in an example.
 #
 # And one this plugin adds: a rule the hook registers that pfctl would refuse. pfctl
@@ -194,7 +194,10 @@ jobs:
           [ -f tools/gen-data-strings.py ] || { echo "not this plugin"; exit 0; }
           python3 tools/gen-data-strings.py --check
 
-      - name: Every string the page asks for is in the catalogue
+      # The page's lang._(), the forms' labels, help and hints, the model's messages and options, the
+      # menu, the ACL and the PHP's gettext(): each string OPNsense passes through gettext is in
+      # source.json, and has its Arabic in opnsense-arabic.
+      - name: Every string the GUI shows is in the catalogue
         # A contributor's pull request (from a fork) and main may carry a string whose Arabic follows
         # later (CONTRIBUTING.md): a warning there; on a branch of this repository a failure, as before.
         env:

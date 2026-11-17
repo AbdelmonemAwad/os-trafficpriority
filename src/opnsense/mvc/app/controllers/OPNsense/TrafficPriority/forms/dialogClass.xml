@@ -39,7 +39,7 @@
         <id>class.ipprotocol</id>
         <label>IP version</label>
         <type>dropdown</type>
-        <help>IPv4 by default. On a Sophos XGS with os-xgs-npu, a marked IPv6 connection stays with the host - its fast path does not write an IPv6 traffic class - so that connection is not forwarded in hardware.</help>
+        <help>IPv4 by default. On an XGS appliance with os-xgs-npu, a marked IPv6 connection stays with the host - its fast path does not write an IPv6 traffic class - so that connection is not forwarded in hardware.</help>
         <grid_view>
             <visible>false</visible>
         </grid_view>
