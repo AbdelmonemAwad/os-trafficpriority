@@ -72,12 +72,15 @@
         /* Why a class makes no rule: the word Marking::problem() gives, the same test the rules hook makes. */
         const problems = {
             'id': "{{ lang._('ID not one the firewall made') }}",
+            'description': "{{ lang._('description ends in a backslash') }}",
             'dscp': "{{ lang._('DSCP not one of 0 to 63') }}",
             'match': "{{ lang._('DSCP to match not one pf can match') }}",
             'protocol': "{{ lang._('protocol not known') }}",
+            'port': "{{ lang._('port field not readable') }}",
             'ports': "{{ lang._('port without TCP or UDP') }}",
             'interface': "{{ lang._('interface field not readable') }}",
             'address': "{{ lang._('address field not readable') }}",
+            'everything': "{{ lang._('nothing narrows it: it would mark every connection') }}",
             'family': "{{ lang._('no source and destination of its IP version') }}"
         };
 

@@ -163,13 +163,20 @@ namespace {
         ];
     }
 
-    /* a class as config.xml's legacy array carries it, the model's defaults beneath */
+    /* a class as config.xml's legacy array carries it, the model's defaults beneath - and the LAN as
+       its interface, since a class that narrows nothing is not written (Marking::narrows()) */
     function cls($uuid, $fields = [])
     {
         return array_merge(['@attributes' => ['uuid' => $uuid], 'enabled' => '1', 'sequence' => '100',
-            'description' => 'Voice', 'interface' => '', 'ipprotocol' => 'inet', 'protocol' => 'any',
+            'description' => 'Voice', 'interface' => 'lan', 'ipprotocol' => 'inet', 'protocol' => 'any',
             'source_net' => 'any', 'source_port' => '', 'destination_net' => 'any', 'destination_port' => '',
             'match_dscp' => '', 'dscp' => '46'], $fields);
+    }
+
+    /* what the log says of the last configuration rendered */
+    function logged()
+    {
+        return implode(' ', $GLOBALS['logged']);
     }
 
     /* $enabled null: no Enabled saved at all, as before the General tab was ever saved */
@@ -289,9 +296,9 @@ namespace {
     $two = ours(render(cfg([cls(U1, ['interface' => 'lan,opt1'])])));
     check(count($two) === 2 && strpos($two[0], 'match in on igb1 ') === 0 && strpos($two[1], 'match in on igb2 ') === 0,
         'two interfaces: a rule on each');
-    $any = ours(render(cfg([cls(U1)])));
+    $any = ours(render(cfg([cls(U1, ['interface' => '', 'protocol' => 'udp', 'destination_port' => '5060'])])));
     check(count($any) === 1 && strpos($any[0], ' on ') === false, 'no interface chosen: one rule, on every interface');
-    foreach (['lan,,opt1', '0', 'lan,0', ' ', 'lan opt1'] as $bad) {
+    foreach (['lan,,opt1', '0', 'lan,0', ' ', 'lan opt1', "lan\n", "lan,opt1\n"] as $bad) {
         $none = ours(render(cfg([cls(U1, ['interface' => $bad])])));
         check(count($none) === 0 && strpos(implode(' ', $GLOBALS['logged']), '(interface)') !== false,
             'interface field ' . json_encode($bad) . ': no rule, never one on every interface, and the log says why');
@@ -302,9 +309,9 @@ namespace {
 
     /* IP versions and addresses */
     $both = ours(render(cfg([cls(U1, ['ipprotocol' => 'inet46'])])));
-    check(count($both) === 2 && strpos($both[0], 'match in inet ') === 0 && strpos($both[1], 'match in inet6 ') === 0,
-        'IPv4 and IPv6, no address: a rule for each');
-    $v4 = ours(render(cfg([cls(U1, ['ipprotocol' => 'inet46', 'source_net' => '192.168.1.20'])])));
+    check(count($both) === 2 && strpos($both[0], 'match in on igb1 inet ') === 0 &&
+        strpos($both[1], 'match in on igb1 inet6 ') === 0, 'IPv4 and IPv6, no address: a rule for each');
+    $v4 = ours(render(cfg([cls(U1, ['interface' => '', 'ipprotocol' => 'inet46', 'source_net' => '192.168.1.20'])])));
     check(count($v4) === 1 && strpos($v4[0], 'match in inet from {192.168.1.20} ') === 0,
         'IPv4 and IPv6 with an IPv4 source: the IPv4 rule only');
     $mixed = ours(render(cfg([cls(U1, ['ipprotocol' => 'inet46', 'source_net' => '192.168.1.20',
@@ -347,6 +354,37 @@ namespace {
     $anyport = ours(render(cfg([cls(U1, ['destination_port' => 'any'])])));
     check(count($anyport) === 1 && strpos($anyport[0], ' port ') === false, 'port any, as the port field offers it: no port, any protocol');
 
+    /* a port field from config.xml written by other means: only what OPNsense writes as a port into a
+       line pfctl reads; of anything else no line at all, not even a comment */
+    $broken = render(cfg([cls(U1, ['protocol' => 'udp', 'destination_port' => "5060\npass in quick all\n#"])]));
+    check(count(ours($broken)) === 0 && strpos(implode("\n", $broken), 'pass in quick all') === false &&
+        strpos(logged(), '(port)') !== false, 'a port holding a line break: no line of it written, and the log says why');
+    $phones = render(cfg([cls(U1, ['protocol' => 'udp', 'destination_port' => 'phones'])]));
+    check(count(ours($phones)) === 0 && strpos(implode("\n", $phones), '$phones') === false &&
+        strpos(logged(), '(port)') !== false, 'an alias of addresses as a port: no rule (26.7 to 26.7.7 write port $phones)');
+    foreach (['20000-10000', '20000:10000', '0', '65536', '05060', '5060 5061', '5060,5061', '{5060}', 'sip:https', 'SIP!'] as $bad) {
+        check(count(ours(render(cfg([cls(U1, ['protocol' => 'tcp', 'destination_port' => $bad])])))) === 0 &&
+            strpos(logged(), '(port)') !== false, 'port ' . json_encode($bad) . ': no rule, and the log says why');
+    }
+    foreach (['5060', '10000-20000', '10000:20000', '5060-5060', 'sip', 'https', 'voip_ports', " 5060\n"] as $good) {
+        check(Marking::port($good) === trim($good), 'port ' . json_encode($good) . ': taken');
+    }
+    $sip = ours(render(cfg([cls(U1, ['protocol' => 'udp', 'destination_port' => 'sip'])])));
+    check(count($sip) === 1 && pf_shape($sip[0]) && strpos($sip[0], ' port {') !== false, 'a port by its name: written');
+
+    /* a class that narrows nothing would mark every connection: not written */
+    foreach ([[], ['protocol' => 'tcp'], ['ipprotocol' => 'inet46'], ['destination_net' => 'any,192.168.1.30'],
+        ['destination_port' => 'any'], ['source_net' => '']] as $fields) {
+        check(count(ours(render(cfg([cls(U1, ['interface' => ''] + $fields)])))) === 0 &&
+            strpos(logged(), '(everything)') !== false,
+            'nothing narrowing it but ' . json_encode($fields) . ': no rule, and the log says why');
+    }
+    foreach ([['source_net' => '192.168.1.20'], ['destination_net' => 'lan'], ['protocol' => 'udp', 'source_port' => '3074'],
+        ['protocol' => 'udp', 'destination_port' => '5060'], ['match_dscp' => '46']] as $fields) {
+        check(count(ours(render(cfg([cls(U1, ['interface' => ''] + $fields)])))) === 1,
+            'narrowed by ' . json_encode($fields) . ' alone: written');
+    }
+
     /* DSCPs */
     $match = ours(render(cfg([cls(U1, ['match_dscp' => '10'])])));
     check(count($match) === 1 && substr_count($match[0], ' tos 0x28') === 1 && pf_shape($match[0]),
@@ -375,13 +413,35 @@ namespace {
         . implode(', ', $names));
     $tie = ours(render(cfg([cls(U1, ['description' => 'First']), cls(U2, ['description' => 'Second'])])));
     check(strpos($tie[1] ?? '', 'First') !== false, 'the same sequence: the one first in the list applied last');
+    $unread = array_map(function ($l) {
+        return substr($l, strrpos($l, ': ') + 2);
+    }, ours(render(cfg([cls(U1, ['description' => 'X', 'sequence' => 'x']),
+        cls(U2, ['description' => 'Last', 'sequence' => '9999'])]))));
+    check($unread === ['X', 'Last'], 'a sequence that cannot be read: applied first, so any other wins: ' . implode(', ', $unread));
     $off = ours(render(cfg([cls(U1, ['enabled' => '0']), cls(U2, ['description' => 'On'])])));
     check(count($off) === 1 && strpos($off[0], U2) !== false, 'a class switched off: no rule of its');
+    $unflagged = cls(U1);
+    unset($unflagged['enabled']);
+    check(count(ours(render(cfg([$unflagged])))) === 1, 'a class with no Enabled element: on, the model\'s default');
     check(count(ours(render(cfg([cls('', ['description' => 'no id'])])))) === 0 &&
         strpos(implode(' ', $GLOBALS['logged']), '(id)') !== false, 'a class without a UUID: no rule');
+    check(count(ours(render(cfg([cls(U1 . "\n")])))) === 0 && strpos(logged(), '(id)') !== false,
+        'a UUID with a line break after it: no rule');
     check(count(ours(render(cfg(cls(U1))))) === 1, 'one class, as config.xml\'s array holds a single one: its rule');
     $nl = ours(render(cfg([cls(U1, ['description' => "two\nlines"])])));
     check(count($nl) === 1 && count(explode("\n", $nl[0])) === 1, 'a description with a new line: still one line');
+
+    /* a backslash ending a line joins the next line to it in pfctl, a comment's too: a class whose
+       description ends in one is not written, and the next class's rule is written whole */
+    $bs = chr(92);
+    foreach (['Voice ' . $bs, 'Voice' . $bs . '  ', 'Voice' . $bs . "\n", 'Voice' . $bs . "\r\n\t"] as $descr) {
+        $lines = ours(render(cfg([cls(U1, ['description' => $descr, 'sequence' => '20', 'interface' => 'lan,opt1']),
+            cls(U2, ['description' => 'Video', 'sequence' => '10'])])));
+        check(count($lines) === 1 && strpos($lines[0], U2) !== false && strpos(logged(), '(description)') !== false,
+            'description ' . json_encode($descr) . ': no rule of its, the next class written, and the log says why');
+    }
+    $inside = ours(render(cfg([cls(U1, ['description' => 'a' . $bs . 'b'])])));
+    check(count($inside) === 1 && substr($inside[0], -3) === 'a' . $bs . 'b', 'a backslash inside a description: written');
 
     /* a rule refused: the reload goes on, the other classes with it */
     $refusing = new class extends \OPNsense\Firewall\Plugin {
@@ -420,6 +480,17 @@ namespace {
     check(Marking::markKey(['dn' => 'parsePlain,dnpipe ']) === null && Marking::markKey([]) === null,
         'neither: none, so no rule rather than one pfctl refuses');
     check(Marking::rules(cls(U1), U1, null) === [] && Marking::rules(cls(U1), U1, 'tos') === [], 'no key: no rule');
+    $keys = new class extends \OPNsense\Firewall\Plugin {
+        public $seen = [];
+
+        public function registerFilterRule($prio, $conf, $defaults = null, ...$more)
+        {
+            $this->seen[] = array_values(array_intersect(['scrub', 'dn'], array_keys($conf)));
+            parent::registerFilterRule($prio, $conf, $defaults, ...$more);
+        }
+    };
+    render(cfg([cls(U1)]), null, $keys);
+    check($keys->seen === [[Marking::markKey()]], 'the hook writes the mark with markKey()\'s key: ' . json_encode($keys->seen));
 
     echo ($failed ? "$failed of $checks checks failed\n" : "$checks checks passed\n");
     exit($failed ? 1 : 0);

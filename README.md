@@ -81,6 +81,21 @@ and in OPNsense 26.7's filter code:
   hook writes no rule for one written by other means, nor for a port without TCP or UDP
   (`parse.y:5309`), nor for an interface or address field it cannot read, and says why in the system
   log (`Traffic Priority:`) and on the page;
+- **a class narrows what it marks** - by an interface, a source, a destination, a port or the DSCP a
+  connection arrives with. One with none of them would mark every connection, both ways, every
+  download among them, and networks upstream and Wi-Fi take a mark such as EF for voice. The page
+  refuses such a class at the save, and the hook writes no rule for one written by other means;
+- **nothing that would break the rules file is written** - config.xml can be written by other means
+  than the page, and OPNsense writes some fields as they are given: a port it cannot map into a
+  `#debug:` comment and into the rule it comments out, the description at the end of the line. So a
+  port is taken as a number, a range whose first port is not above its second, a name or an alias of
+  ports, and nothing else: not with a line break in it, which would start a line pf loads, nor an
+  alias of addresses, which 26.7 to 26.7.7 write as a port, nor a range the wrong way round, which
+  26.7 to 26.7.5 write as it is (`parse.y:3836-3840`) - pfctl refuses either, and with it the whole
+  rule set. Nor a description ending in a backslash, which pfctl takes as joining the next line to
+  it, a comment's too (`parse.y:6806-6814`, `6882-6883`), so that the next rule would quietly not be
+  loaded. The page refuses each at the save - a class is read whole when any field of it changes -
+  and the hook writes no rule for one written by other means;
 - **"Arriving with DSCP" is pf's `tos`** - matched on the packet that opens the connection, its ECN
   bits aside. pf cannot match 0, which it takes for no DSCP asked (`pf.c:5805`), so Best Effort is
   not offered there.
@@ -145,16 +160,20 @@ stays counted while it is open.
 
 On 2026-11-17, from this branch, nothing installed on any firewall:
 
-- **the rules** - `tools/test-rules.php`, 69 checks, run with OPNsense's own Plugin, FilterRule, Rule
-  and Util of four releases - 26.7, 26.7.8 and 26.7.9 from opnsense/core's tags, and 26.7.3's
-  (identical to 26.7.4 and 26.7.5 in these files) - and of opnsense/core's main branch of that day,
-  under PHP 8.5. For sample classes it checks the line OPNsense
+- **the rules** - `tools/test-rules.php`, 112 checks, run with OPNsense's own Plugin, FilterRule, Rule
+  and Util of every release from 26.7 to 26.7.9, from opnsense/core's tags, and of opnsense/core's
+  main branch of that day, under PHP 8.5. For sample classes it checks the line OPNsense
   writes - match, in, never quick, no state, no reply-to, the DSCP's ECN bits clear, the label -
   against pfctl's grammar; one rule per interface and IP version; priority 0 ahead of OPNsense's own;
-  the sequence's order; no rule, and the reason in the log, for an address pair of two versions, a
-  port without TCP or UDP, an interface or address field it cannot read, a DSCP out of range, 0 to
-  match, a class without an ID; nothing while off, the default; a rule OPNsense refuses leaving the
-  reload and the other classes alone; and the key each release writes the mark with;
+  the sequence's order, an unreadable one first; no rule, and the reason in the log, for an address
+  pair of two versions, a port without TCP or UDP, an interface or address field it cannot read, a
+  port holding a line break, an alias of addresses or a range the wrong way round, a description
+  ending in a backslash, a class that narrows nothing, a DSCP out of range, 0 to match, a class
+  without an ID; nothing while off, the default; a rule OPNsense refuses leaving the reload and the
+  other classes alone; and the key each release writes the mark with;
+- **the model** - `tools/test-mvc.php`, 31 checks, with stand-ins for OPNsense's MVC base: each of
+  those refusals at the save, on the field it concerns, a class read whole when any field of it
+  changed, and the message of OPNsense's own field type kept where it gave one;
 - **the page's numbers** - `tools/test-status.py`, 17 checks: `status.py` reading a `rules.debug` and
   a `pfctl -v -s rules` as OPNsense and pfctl write them, by each class's label;
 - **the self-update** - `tools/test-self-update.py`, 45 checks, as os-blocklists has it;

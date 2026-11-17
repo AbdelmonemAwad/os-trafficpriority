@@ -28,6 +28,7 @@ tools/check-code-language.py export-ignore
 tools/check-private-data.py export-ignore
 tools/check-strings.py export-ignore
 tools/check-uninstall.sh export-ignore
+tools/test-mvc.php export-ignore
 tools/test-rules.php export-ignore
 tools/test-self-update.py export-ignore
 tools/test-status.py export-ignore

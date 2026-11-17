@@ -47,6 +47,15 @@ use OPNsense\Firewall\Util;
  *    port aside - read in the source, not measured. A match rule checks its ports (pf.c:5763-5770).
  *  - The mark is written `scrub ( set-tos 0xNN )`, which pfctl takes on a filter rule
  *    (parse.y:2932-2948, 1516-1522, 7695-7698), NN the DSCP shifted by two, as the TOS byte holds it.
+ *  - Nothing goes into /tmp/rules.debug that would break it. pfctl refuses the whole rule set for one
+ *    line it cannot read (filter.inc:399-437), and OPNsense writes some fields as they are given: a
+ *    port it cannot map into a '#debug:' comment and into the rule it comments out (Rule.php:103-130,
+ *    355), the description at the end of the line (Rule.php:171-174). config.xml can be written by
+ *    other means than the page, so each field is taken here only in a form that cannot break a line
+ *    or the grammar - a class with another is not written, and problem() says which field.
+ *  - A class narrows what it marks: an interface, a source, a destination, a port or a DSCP to
+ *    arrive with. One with none of them would mark every connection, both ways, every download with
+ *    them; the page refuses it at the save, and it is not written (narrows()).
  */
 class Marking
 {
@@ -61,6 +70,9 @@ class Marking
     const PORT_PROTOCOLS = ['tcp', 'udp', 'tcp/udp'];
     /* a class whose sequence cannot be read is applied before every other, so any other wins */
     const NO_SEQUENCE = 100000;
+    /* a class's fields, as config.xml and the model have them, and as problem() reads them */
+    const FIELDS = ['enabled', 'sequence', 'description', 'interface', 'ipprotocol', 'protocol', 'source_net',
+        'source_port', 'destination_net', 'destination_port', 'match_dscp', 'dscp'];
 
     /* where log() writes: the system log, or what a test puts here, function ($priority, $message) */
     public static $log = null;
@@ -141,12 +153,69 @@ class Marking
     }
 
     /**
-     * A port field as FilterRule takes it: '' for none, which any is too (Rule.php:111-112 drops it).
+     * A port field as FilterRule takes it: '' for none, which any is too (Rule.php:111-112 drops it);
+     * null for a value not taken here, whose class is then not written (problem(): 'port'). Taken: a
+     * number from 1 to 65535; two of them joined by '-' or ':', the first not above the second - a
+     * range; a name in lower case, as /etc/services has them; an alias's name - but not one of an alias
+     * other than an alias of ports with ports in it. PortField refuses the rest at the save. In
+     * config.xml written by other means: a value OPNsense cannot map is written as given into a
+     * '#debug:' comment and into the rule it comments out (Rule.php:122-130, 355), and a line break in
+     * it starts a line pf loads, ahead of every rule of the owner's. 26.7 to 26.7.7 write any alias as
+     * `port $name` (Rule.php:115-121 there), and 26.7 to 26.7.5 a range in either order (Util::isPort()
+     * there), and pfctl refuses an alias of addresses as a port, and a range whose first port is above
+     * its second (parse.y:3836-3840, 5232) - with either, the whole rule set. The patterns end at the
+     * end of the value ('D'): '$' alone also takes the place before a last line break.
      */
     public static function port($value)
     {
         $value = trim((string)$value);
-        return $value === 'any' ? '' : $value;
+        if ($value === '' || $value === 'any') {
+            return '';
+        }
+        if (preg_match('/^[0-9]+([-:][0-9]+)?$/D', $value)) {
+            $numbers = preg_split('/[-:]/', $value);
+            foreach ($numbers as $number) {
+                if (!preg_match('/^[1-9][0-9]{0,4}$/D', $number) || (int)$number > 65535) {
+                    return null;
+                }
+            }
+            return count($numbers) === 2 && (int)$numbers[0] > (int)$numbers[1] ? null : $value;
+        }
+        if (!preg_match('/^([a-z0-9][a-z0-9.+_-]*|[A-Za-z_][A-Za-z0-9_]{0,31})$/D', $value)) {
+            return null;
+        }
+        return Util::isAlias($value) && !Util::isPortAlias($value) ? null : $value;
+    }
+
+    /**
+     * A class's description as its rules carry it, after DESCR: a line break made a space, as OPNsense
+     * drops it from its own comment (Rule.php:171-174). null when it ends in a backslash, spaces after
+     * it aside, which FilterRule trims (Rule.php:350): pfctl takes a backslash at the end of a line as
+     * joining the next line to it, a comment's too (parse.y:6806-6814, 6882-6883), so the next line of
+     * /tmp/rules.debug - the class's next rule, or another class's - would not be loaded, and pf would
+     * say nothing of it.
+     */
+    public static function description($value)
+    {
+        $text = preg_replace('/[\r\n]+/', ' ', (string)$value);
+        return substr(rtrim($text), -1) === '\\' ? null : $text;
+    }
+
+    /**
+     * Whether a class narrows what it marks: an interface, a source or a destination other than any, a
+     * port, or a DSCP it arrives with. One with none of them would mark every connection that comes in
+     * on any interface, both ways - every download among them - and upstream networks and Wi-Fi
+     * treat a mark such as EF as voice. The page refuses such a class at the save; one written by other
+     * means is not written (problem(): 'everything'). Neither the protocol nor the IP version counts.
+     */
+    public static function narrows(array $class)
+    {
+        return self::interfaces($class['interface'] ?? '') !== ''
+            || self::addresses($class['source_net'] ?? '') !== ['any']
+            || self::addresses($class['destination_net'] ?? '') !== ['any']
+            || self::port($class['source_port'] ?? '') !== ''
+            || self::port($class['destination_port'] ?? '') !== ''
+            || trim((string)($class['match_dscp'] ?? '')) !== '';
     }
 
     /**
@@ -193,7 +262,7 @@ class Marking
             if ($item === '') {
                 continue;
             }
-            if ($item !== 'any' && self::family($item) === null && !preg_match('/^(\(self\)|[A-Za-z_][A-Za-z0-9_]*)$/', $item)) {
+            if ($item !== 'any' && self::family($item) === null && !preg_match('/^(\(self\)|[A-Za-z_][A-Za-z0-9_]*)$/D', $item)) {
                 return null;
             }
             $items[] = $item;
@@ -206,7 +275,8 @@ class Marking
      * commas, a rule each (Rule.php:271); '' for every interface, which only an empty field is. null
      * when the field holds something that is not a name: an empty element ("lan,,opt1") or "0" is taken
      * by Rule for no interface, a rule on every interface (Rule.php:271, 402-413), so such a class is
-     * not written rather than widened.
+     * not written rather than widened. A name ends at the end of the field ('D'): a line break after
+     * it is no name either.
      */
     public static function interfaces($value)
     {
@@ -216,7 +286,7 @@ class Marking
         }
         $names = explode(',', $value);
         foreach ($names as $name) {
-            if (!preg_match('/^[A-Za-z_][A-Za-z0-9_.]*$/', $name)) {
+            if (!preg_match('/^[A-Za-z_][A-Za-z0-9_.]*$/D', $name)) {
                 return null;
             }
         }
@@ -224,12 +294,14 @@ class Marking
     }
 
     /**
-     * The label of a class's rules; null when its ID is not a UUID.
+     * The label of a class's rules; null when its ID is not a UUID - one with a line break after it
+     * too, which an attribute in config.xml written by other means can hold: its rules' lines would be
+     * split inside the label's quotes.
      */
     public static function label($uuid)
     {
         $uuid = strtolower((string)$uuid);
-        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $uuid)) {
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D', $uuid)) {
             return null;
         }
         return self::LABEL . $uuid;
@@ -267,20 +339,26 @@ class Marking
 
     /**
      * Why a class makes no rule, one word the page turns into a sentence; null when it makes some.
-     *   id         its ID is not a UUID (config.xml written by other means)
-     *   dscp       the DSCP to set is not one of 0 to 63
-     *   match      the DSCP to match is not one of 1 to 63: pf cannot match 0, which it takes for no
-     *              DSCP asked (pf.c:5805, "r->tos &&")
-     *   protocol   a protocol this does not know
-     *   ports      a port without TCP or UDP
-     *   interface  an interface field that names none
-     *   address    an address field that names none
-     *   family     no source, destination and IP version fit together
+     *   id           its ID is not a UUID (config.xml written by other means)
+     *   description  its description ends in a backslash (description())
+     *   dscp         the DSCP to set is not one of 0 to 63
+     *   match        the DSCP to match is not one of 1 to 63: pf cannot match 0, which it takes for no
+     *                DSCP asked (pf.c:5805, "r->tos &&")
+     *   protocol     a protocol this does not know
+     *   port         a port field holding what is not taken here (port())
+     *   ports        a port without TCP or UDP
+     *   interface    an interface field that names none
+     *   address      an address field that names none
+     *   everything   nothing narrows it: it would mark every connection (narrows())
+     *   family       no source, destination and IP version fit together
      */
     public static function problem(array $class, $uuid)
     {
         if (self::label($uuid) === null) {
             return 'id';
+        }
+        if (self::description($class['description'] ?? '') === null) {
+            return 'description';
         }
         if (self::dscp($class['dscp'] ?? '') === null) {
             return 'dscp';
@@ -293,8 +371,12 @@ class Marking
         if ($protocol === null) {
             return 'protocol';
         }
-        $ports = self::port($class['source_port'] ?? '') . self::port($class['destination_port'] ?? '');
-        if ($ports !== '' && !in_array($protocol, self::PORT_PROTOCOLS, true)) {
+        $from = self::port($class['source_port'] ?? '');
+        $to = self::port($class['destination_port'] ?? '');
+        if ($from === null || $to === null) {
+            return 'port';
+        }
+        if ($from . $to !== '' && !in_array($protocol, self::PORT_PROTOCOLS, true)) {
             return 'ports';
         }
         if (self::interfaces($class['interface'] ?? '') === null) {
@@ -302,6 +384,9 @@ class Marking
         }
         if (self::addresses($class['source_net'] ?? '') === null || self::addresses($class['destination_net'] ?? '') === null) {
             return 'address';
+        }
+        if (!self::narrows($class)) {
+            return 'everything';
         }
         if (empty(self::combinations($class['source_net'] ?? '', $class['destination_net'] ?? '', $class['ipprotocol'] ?? ''))) {
             return 'family';
@@ -328,7 +413,7 @@ class Marking
             'disablereplyto' => true,
             $key => $key === 'scrub' ? $mark : 'scrub ( ' . $mark . ' )',
             'label' => self::label($uuid),
-            'descr' => self::DESCR . preg_replace('/[\r\n]+/', ' ', (string)($class['description'] ?? '')),
+            'descr' => self::DESCR . self::description($class['description'] ?? ''),
         ];
         $interfaces = self::interfaces($class['interface'] ?? '');
         if ($interfaces !== '') {

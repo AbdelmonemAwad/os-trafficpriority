@@ -79,6 +79,14 @@ jobs:
       - name: The rules hook, with OPNsense 26.7.9's classes
         run: OPNSENSE_CORE=core-26.7.9/src php tools/test-rules.php
 
+      # What the model refuses at the save - a class the hook would not write, read whole when any
+      # field of it changed - and what the page's API answers, with stand-ins for OPNsense's MVC base.
+      - name: The model and the page's API, with OPNsense 26.7's classes
+        run: OPNSENSE_CORE=core-26.7/src php tools/test-mvc.php
+
+      - name: The model and the page's API, with OPNsense 26.7.9's classes
+        run: OPNSENSE_CORE=core-26.7.9/src php tools/test-mvc.php
+
       # status.py's reading of the rules pf was given and of pf's own counters, by each class's label.
       - name: The page says what pf holds of each class
         run: python3 tools/test-status.py
