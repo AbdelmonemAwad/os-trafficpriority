@@ -278,7 +278,7 @@
             {{ lang._('Matched now, Matched since reload, packets and bytes: what pf counted for the rules of each class. Every filter reload, an Apply among them, starts them again from 0 - packets and bytes too, unless the firewall keeps counters - while connections keep their mark; and a connection two classes match is counted under both, keeping the mark of the lower sequence. Marked now, above, counts each connection pf holds with a mark set coming in, once, whenever it opened, while a class marks. pfctl shows that a mark is set, not which one, so a normalization rule of yours setting any mark on connections coming in is counted too.') }}
         </div>
         <div id="tp-project" class="text-muted" style="display: none; padding: 0 15px 15px;">
-            {{ lang._('os-xgs-npu is installed: it puts a marked IPv4 connection into hardware with its DSCP and keeps a marked IPv6 connection with the host - measured with a normalization rule, not yet with these rules. A connection in hardware adds no more packets or bytes here.') }}
+            {{ lang._('os-xgs-npu is installed: it puts a marked IPv4 connection into hardware with its DSCP - measured with these rules on an XGS 3300 - and keeps a marked IPv6 connection with the host. A connection in hardware adds no more packets or bytes here.') }}
         </div>
         <div id="tp-pf-alone" class="text-muted" style="display: none; padding: 0 15px 15px;">
             {{ lang._('pf alone marks connections here: without os-xgs-npu no hardware carries them.') }}

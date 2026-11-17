@@ -23,7 +23,7 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
 >
 > **Written, not released (2026-11-17).** The first part is here: classes of connections, each
 > marked with a DSCP by pf. Which switch queue a marked frame then waits in is the next part, and
-> is not measured yet. Nothing has been installed on an appliance; what was run is under
+> is not measured yet. Tried the same day on a lab appliance, an XGS 3300; what was run is under
 > [What is tested](#what-is-tested).
 
 <p align="center"><b>Contents:</b> <a href="#what-it-does">What it does</a> &middot; <a href="#how-a-class-marks-its-connections">How a class marks its connections</a> &middot; <a href="#on-a-sophos-xgs">On a Sophos XGS</a> &middot; <a href="#not-yet-and-why">Not yet, and why</a> &middot; <a href="#what-is-tested">What is tested</a> &middot; <a href="#installation">Installation</a> &middot; <a href="#updates">Updates</a> &middot; <a href="#where-it-fits">Where it fits</a> &middot; <a href="#licence">Licence</a></p>
@@ -128,9 +128,13 @@ says so. The checks write every sample class out with the rule classes of both O
 
 ## On a Sophos XGS
 
-What [os-xgs-npu](https://github.com/AbdelmonemAwad/os-xgs-npu) measured, with OPNsense's
-normalization rule rather than with this plugin's rules:
+What was measured: with this plugin's class on an XGS 3300, and before it, by
+[os-xgs-npu](https://github.com/AbdelmonemAwad/os-xgs-npu), with OPNsense's normalization rule:
 
+- **a class's mark kept in hardware, on the XGS 3300** - on 2026-11-17, a class marking UDP with
+  EF: what arrived at the far end carried TOS 0xb8 while the connection was in hardware, and 0x0
+  without the class ([What is tested](#what-is-tested)). Not yet measured on the XGS 136 with a
+  class;
 - **an IPv4 connection in hardware keeps pf's mark** - since 2026-10-24 both drivers give a
   connection they make the DSCP pf's state carries, on the XGS 3300 and the XGS 136
   ([flow-dscp-2026-10-24](https://github.com/AbdelmonemAwad/os-xgs-npu/blob/main/docs/measurements/flow-dscp-2026-10-24.md)).
@@ -157,9 +161,11 @@ stays counted while it is open.
   the next part: os-xgs-npu's switch tool first, then measured on a lab appliance, the XGS 136 only
   after the XGS 3300. Until then nothing of the switch is written, and the page says "not measured
   yet".
-- **these rules on an appliance** - nothing here has been installed: the rules pfctl loads, the page,
-  the mark in hardware with a match rule instead of a normalization rule (the state field is the
-  same, `act.set_tos`, read in the source, not measured), and the removal.
+- **the XGS 136, and installing and removing on an appliance** - on 2026-11-17 the rules pfctl
+  loads, the mark in hardware with a class's match rule, Marked now and a refusal were tried on an
+  XGS 3300, with this branch's files where the installer puts them ([What is tested](#what-is-tested)).
+  Not yet on the XGS 136, where only a normalization rule's mark was measured in hardware; nor
+  `install.sh` and `uninstall.sh` run on an appliance, nor the page photographed in a browser.
 - **the firewall's own outgoing connections** - a class matches where connections come in, so a
   connection the firewall opens itself (its own DNS queries, say) is not marked; one opened to it -
   the GUI, SSH - is, both ways.
@@ -179,8 +185,19 @@ stays counted while it is open.
 
 ## What is tested
 
-On 2026-11-17, from this branch, nothing installed on any firewall:
+On 2026-11-17, from this branch - on a lab appliance first, then the checks:
 
+- **on an XGS 3300** - the second of the lab's, with OPNsense 26.7.9_1 and os-xgs-npu's main, this
+  branch's files where the installer puts them, at 12:14 UTC: a class on F2 marking UDP to an
+  address of the XGS 136, port 5321, with EF. pf held its rule, `match in on <F2> inet proto udp from
+  any to <that address> port = 5321 set ( tos 0xb8 )`. UDP at 50 Mbit/s for 40 s from a machine on
+  F2: the XGS 136 read TOS 0x0 on what arrived without the class, and 0xb8 with it, at 5 s and at
+  30 s, the connection in hardware each time; the driver's `dp.flow_dscp`, the connections it made
+  with a mark, went from 3 to 4. During the marked run Marked now said 1; a class with only a
+  description was refused; then the class was removed and the setting put back as found. The run,
+  photographed: [dscp-2026-11-17.png](docs/images/measurements/dscp-2026-11-17.png). The same test
+  had found Marked now at 0 during a marked run - pfctl prints every marked state `set-tos 0x00` -
+  and the count now reads only that a mark is set;
 - **the rules** - `tools/test-rules.php`, 112 checks, run with OPNsense's own Plugin, FilterRule, Rule
   and Util of every release from 26.7 to 26.7.9, from opnsense/core's tags, and of opnsense/core's
   main branch of that day, under PHP 8.5. For sample classes it checks the line OPNsense
@@ -205,8 +222,9 @@ On 2026-11-17, from this branch, nothing installed on any firewall:
 - **the self-update** - `tools/test-self-update.py`, 45 checks, as os-blocklists has it;
 - **the strings** - `tools/check-strings.py`: each of the 117 strings the GUI shows - the page, the
   dialog's labels, help and the DSCPs' names, the model's messages, the menu, the ACL and the PHP's -
-  is listed in `source.json`; 29 of them had their Arabic in opnsense-arabic that day, and the others
-  are to follow there;
+  is listed in `source.json`; 30 of them had their Arabic in opnsense-arabic that day, and the other
+  87 are in its pull request [#80](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/80), which
+  merges first;
 - **the installation** - `tools/test-install.py`, 29 checks: `install/install.sh`,
   `install/uninstall.sh`, the package's `post-install.sh` and `post-deinstall.sh`, and
   `place-menu.sh`, run in a temporary root with stand-ins for `service`, `configctl` and `pfctl` -
@@ -224,7 +242,8 @@ install scripts and `place-menu.sh` - and the tests caught 74. The one left chan
 its own `rm` of the menu file, `uninstall.sh`'s `rm -rf` of the model's directory takes the file
 with it.
 
-Not tested: anything on a firewall.
+Not tested: the XGS 136; IPv6 on an appliance; `install.sh` and `uninstall.sh` on an appliance; the
+page in a browser.
 
 ## Installation
 
