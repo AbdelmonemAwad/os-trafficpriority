@@ -7,6 +7,6 @@
         <id>trafficpriority.general.enabled</id>
         <label>Enabled</label>
         <type>checkbox</type>
-        <help>Mark the connections of the classes switched on with their DSCP. Off, the rules are gone at the next filter reload and connections opened after it are not marked; the classes stay. Apply puts a change into the firewall.</help>
+        <help>Mark connections of classes switched on with their DSCP. Off, their rules are gone at the next filter reload and connections opened after it are not marked; classes stay. Apply puts a change into the firewall.</help>
     </field>
 </form>

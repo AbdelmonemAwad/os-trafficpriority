@@ -5,7 +5,7 @@
 <acl>
     <page-firewall-trafficpriority>
         <name>Firewall: Traffic Priority</name>
-        <description>Allow access to traffic priority: its classes, the DSCP each one marks, and the firewall rules it registers</description>
+        <description>Allow access to traffic priority: its classes, the DSCP each marks, and firewall rules it registers</description>
         <patterns>
             <pattern>ui/trafficpriority/*</pattern>
             <pattern>api/trafficpriority/*</pattern>

@@ -75,7 +75,7 @@ class ServiceController extends ApiControllerBase
         }
         $out = trim((string)(new Backend())->configdRun('filter reload skip_alias'));
         if (strpos($out, 'OK') !== 0) {
-            return ['status' => 'failed', 'status_msg' => gettext('The filter reload did not finish.') . ' ' . $out];
+            return ['status' => 'failed', 'status_msg' => gettext('Filter reload did not finish.') . ' ' . $out];
         }
         return ['status' => 'ok'];
     }

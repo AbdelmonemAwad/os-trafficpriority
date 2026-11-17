@@ -48,7 +48,7 @@ class TrafficPriority extends BaseModel
                 empty(Marking::combinations((string)$class->source_net, (string)$class->destination_net, (string)$class->ipprotocol))
             ) {
                 $messages->appendMessage(new Message(
-                    gettext('No source and destination here fit the IP version chosen: an IPv4 address and an IPv6 address cannot make one rule.'),
+                    gettext('No source and destination here fit the IP version chosen: an IPv4 and an IPv6 address cannot make one rule.'),
                     $class->ipprotocol->__reference
                 ));
             }

@@ -71,14 +71,14 @@
 
         /* Why a class makes no rule: the word Marking::problem() gives, the same test the rules hook makes. */
         const problems = {
-            'id': "{{ lang._('its ID is not one the firewall made') }}",
-            'dscp': "{{ lang._('its DSCP is not one of 0 to 63') }}",
-            'match': "{{ lang._('its DSCP to match is not one pf can match') }}",
-            'protocol': "{{ lang._('its protocol is not one Traffic Priority knows') }}",
-            'ports': "{{ lang._('a port needs TCP, UDP or TCP/UDP') }}",
-            'interface': "{{ lang._('an interface it names is not one') }}",
-            'address': "{{ lang._('an address it names is not one') }}",
-            'family': "{{ lang._('no source and destination fit its IP version') }}"
+            'id': "{{ lang._('ID not one the firewall made') }}",
+            'dscp': "{{ lang._('DSCP not one of 0 to 63') }}",
+            'match': "{{ lang._('DSCP to match not one pf can match') }}",
+            'protocol': "{{ lang._('protocol not known') }}",
+            'ports': "{{ lang._('port without TCP or UDP') }}",
+            'interface': "{{ lang._('interface field not readable') }}",
+            'address': "{{ lang._('address field not readable') }}",
+            'family': "{{ lang._('no source and destination of its IP version') }}"
         };
 
         /*
@@ -102,9 +102,9 @@
                 "{{ lang._('In pf') }}", held.length + ' / ' + on.length,
                 data.pf ? "{{ lang._('classes with rules loaded') }}" : "{{ lang._('pf could not be asked') }}"));
             $cards.append(card('', 'fa-link', "{{ lang._('Marked now') }}", count(states),
-                count(created) + ' ' + "{{ lang._('since the rules were loaded') }}"));
+                count(created) + ' ' + "{{ lang._('since rules were loaded') }}"));
             $cards.append(card('', 'fa-sitemap', "{{ lang._('Switch queues') }}", "{{ lang._('not measured yet') }}",
-                "{{ lang._('the DSCP is written; no queue is set') }}"));
+                "{{ lang._('DSCP written; no queue set') }}"));
             $('#tp-project').toggle(!!data.project);
             $('#tp-pf-alone').toggle(!data.project);
         }
@@ -219,7 +219,7 @@
 <div class="xgs-cards xgs-top" id="tp-cards"></div>
 <div class="text-muted clearfix" style="padding: 0 0 10px;">
     <button id="refreshAct" class="btn btn-default btn-xs pull-right" type="button" title="{{ lang._('Refresh') }}"><i class="fa fa-fw fa-refresh"></i></button>
-    {{ lang._('A class marks the connections that come in on its interfaces and match it with its DSCP, both ways, written by pf. A connection keeps the mark it opened with: a change reaches new connections.') }}
+    {{ lang._('A class marks connections that come in on its interfaces and match it with its DSCP, both ways, written by pf. A connection keeps the mark it opened with: a change reaches new connections.') }}
 </div>
 
 <ul class="nav nav-tabs" data-tabs="tabs" id="maintabs">
@@ -252,13 +252,13 @@
             <tfoot></tfoot>
         </table>
         <div class="text-muted" style="padding: 0 15px 10px;">
-            {{ lang._('Not in pf: the class saved and not applied yet, or Traffic Priority off. Not placed: OPNsense wrote the rule commented out - an interface that is not there, an address it could not read. Packets and bytes are what pf saw.') }}
+            {{ lang._('Not in pf: class saved and not applied yet, or Traffic Priority off. Not placed: OPNsense wrote its rule commented out - an interface not there, an address it could not read. Packets and bytes are what pf saw.') }}
         </div>
         <div id="tp-project" class="text-muted" style="display: none; padding: 0 15px 15px;">
             {{ lang._('os-xgs-npu is installed: it puts a marked IPv4 connection into hardware with its DSCP and keeps a marked IPv6 connection with the host - measured with a normalization rule, not yet with these rules. A connection in hardware adds no more packets or bytes here.') }}
         </div>
         <div id="tp-pf-alone" class="text-muted" style="display: none; padding: 0 15px 15px;">
-            {{ lang._('pf alone marks the connections here: without os-xgs-npu no hardware carries them.') }}
+            {{ lang._('pf alone marks connections here: without os-xgs-npu no hardware carries them.') }}
         </div>
     </div>
     <div id="general" class="tab-pane">

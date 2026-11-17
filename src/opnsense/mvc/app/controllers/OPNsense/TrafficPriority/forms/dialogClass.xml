@@ -17,7 +17,7 @@
         <id>class.sequence</id>
         <label>Sequence</label>
         <type>text</type>
-        <help>When two classes match the same connection, the one with the lower number sets its DSCP.</help>
+        <help>When two classes match one connection, the lower number sets its DSCP.</help>
         <grid_view>
             <width>7em</width>
         </grid_view>
@@ -26,14 +26,14 @@
         <id>class.description</id>
         <label>Description</label>
         <type>text</type>
-        <help>The class's name. Its rules carry it in pf's rule set, after "Traffic Priority:".</help>
+        <help>A name for the class, carried by its rules in pf's rule set after "Traffic Priority:".</help>
     </field>
     <field>
         <id>class.interface</id>
         <label>Interfaces</label>
         <type>select_multiple</type>
         <hint>any</hint>
-        <help>Where the connections come in. None chosen: every interface.</help>
+        <help>Where connections come in. None chosen: every interface.</help>
     </field>
     <field>
         <id>class.ipprotocol</id>
@@ -55,14 +55,14 @@
         <label>Source</label>
         <type>text</type>
         <style>net_selector net_selector_multi</style>
-        <help>Where the connections come from: addresses, networks, an alias, an interface's network. any: every source.</help>
+        <help>Where connections come from: an address or a network, aliases, interface networks. any: every source.</help>
     </field>
     <field>
         <id>class.source_port</id>
         <label>Source port</label>
         <type>text</type>
         <style>port_selector</style>
-        <help>The port the connections come from: mostly left empty. A number, a name, a range (10000-20000) or an alias of ports.</help>
+        <help>Port connections come from, mostly left empty: a number, a name, a range (10000-20000) or an alias of ports.</help>
         <grid_view>
             <visible>false</visible>
         </grid_view>
@@ -72,14 +72,14 @@
         <label>Destination</label>
         <type>text</type>
         <style>net_selector net_selector_multi</style>
-        <help>Where the connections go: addresses, networks, an alias, an interface's network or (self), the firewall itself. any: every destination.</help>
+        <help>Where connections go: an address or a network, aliases, interface networks or (self), the firewall itself. any: every destination.</help>
     </field>
     <field>
         <id>class.destination_port</id>
         <label>Destination port</label>
         <type>text</type>
         <style>port_selector</style>
-        <help>The port the connections go to: a number, a name (sip, https), a range (10000-20000) or an alias of ports.</help>
+        <help>Port connections go to: a number, a name (sip, https), a range (10000-20000) or an alias of ports.</help>
     </field>
     <field>
         <id>class.match_dscp</id>
@@ -91,6 +91,6 @@
         <id>class.dscp</id>
         <label>Set DSCP</label>
         <type>dropdown</type>
-        <help>The DSCP pf writes into every packet of the class's connections, both ways, the two ECN bits left as they came. EF (46) is the usual mark for voice. The mark is fixed when a connection opens: a change reaches new connections.</help>
+        <help>DSCP pf writes into every packet of this class's connections, both ways, their two ECN bits left as they came. EF (46) is the usual mark for voice. A mark is fixed when a connection opens: a change reaches new connections.</help>
     </field>
 </form>
