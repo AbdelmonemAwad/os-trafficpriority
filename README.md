@@ -160,7 +160,12 @@ stays counted while it is open.
 - **the switch's queues** - putting a marked frame in its own queue, and scheduling the queues, is
   the next part: os-xgs-npu's switch tool first, then measured on a lab appliance, the XGS 136 only
   after the XGS 3300. Until then nothing of the switch is written, and the page says "not measured
-  yet".
+  yet". The way there was measured on the second XGS 3300 on 2026-11-17, with a switch entry written
+  for the test and taken away after: EF from the coprocessor in queue 7, TCP at line rate. A stream
+  marked EF took 922 to 931 Mbit/s and left an unmarked one 0 to 16, against 370 to 564 each without
+  the entry; the two together stayed at 928 to 941 Mbit/s in every run. So a class for a bulk stream
+  would starve the rest, and the next part's guaranteed minimum is what protects them. The runs,
+  photographed: [a4-2026-11-17.png](docs/images/measurements/a4-2026-11-17.png).
 - **the XGS 136, and installing and removing on an appliance** - on 2026-11-17 the rules pfctl
   loads, the mark in hardware with a class's match rule, Marked now and a refusal were tried on an
   XGS 3300, with this branch's files where the installer puts them ([What is tested](#what-is-tested)).
