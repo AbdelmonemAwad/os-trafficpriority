@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
 #
-"""Follow os-trafficpriority's published releases on GitHub. Run from XGS: Updates
-(os-xgs-npu's Plugins tab) or by hand, and by nothing else: no cron entry has ever run it.
+"""Follow os-trafficpriority's published releases on GitHub. Run by hand, or from XGS: Updates
+(os-xgs-npu's Plugins tab) where an os-xgs-npu that lists this plugin is installed, and by nothing
+else: no cron entry has ever run it.
 
     self-update.py          take the latest release if it is ahead of what is installed
     self-update.py check    say what it would do, and change nothing

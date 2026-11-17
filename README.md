@@ -15,7 +15,7 @@
 
 # Traffic Priority for OPNsense
 
-Strict priority for chosen traffic - voice, games, the firewall's own management - applied where that traffic actually flows: in the queues of a Sophos XGS's coprocessor and of its switch, which forwarded traffic never leaves.
+Priority for chosen traffic - voice, games, the firewall's own management. The goal is strict priority where that traffic actually flows, in the queues of an XGS appliance's coprocessor and switch, which forwarded traffic never leaves; this first part marks the chosen connections with a DSCP, through pf, and sets no queue yet.
 
 > ~~**Planned - nothing here runs yet.** This repository was opened on 2026-10-22 to hold
 > Traffic Priority as a plugin of its own. No code has been written or moved into it, and there is no
@@ -161,6 +161,16 @@ stays counted while it is open.
 - **the firewall's own outgoing connections** - a class matches where connections come in, so a
   connection the firewall opens itself (its own DNS queries, say) is not marked; one opened to it -
   the GUI, SSH - is, both ways.
+- **connections a port forward passes** - a port forward (Firewall: NAT: Destination NAT) whose
+  Firewall rule is set to Pass is written `rdr pass`, and pf then takes the NAT rule as the one that
+  decides and reads no filter rule for its connections (`pf.c:6036-6038`) - no class's either, so
+  they keep the DSCP they arrive with. With Register rule, or Manual and a rule of one's own, they go
+  through the filter rules, and a class marks them. The Interfaces help says so.
+- **Firewall: Shaper and the mark** - probably seen on uploads only; not measured. pf writes the mark
+  as a packet comes in on the class's interface, and on a reply as it leaves by it. With a class on
+  the LAN, a Shaper rule on the WAN's way out sees the mark, and one on the WAN's way in sees the DSCP
+  a download arrives with, which pf rewrites only as it leaves by the LAN. Which of ipfw and pf goes
+  first on one interface was not checked. The Set DSCP help says so.
 - **IPv6 in hardware** - see above: a marked IPv6 connection stays with the host.
 - **following Firewall: Shaper, a guaranteed minimum, users and applications** - later parts, after
   the queues.

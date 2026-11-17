@@ -1,6 +1,6 @@
 # Working on this
 
-A plugin, planned: strict priority for chosen traffic - voice, games, the firewall's own management - applied where that traffic actually flows: in the queues of a Sophos XGS's coprocessor and of its switch, which forwarded traffic never leaves.
+A plugin, written, not released: priority for chosen traffic - voice, games, the firewall's own management. Its goal is strict priority where that traffic actually flows, in the queues of an XGS appliance's coprocessor and switch, which forwarded traffic never leaves; its first part marks the chosen connections with a DSCP, through pf, and sets no queue yet.
 
 It is one part of the [os-xgs-npu](https://github.com/AbdelmonemAwad/os-xgs-npu) project, and works the same way.
 

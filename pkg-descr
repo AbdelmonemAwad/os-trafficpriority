@@ -1,8 +1,9 @@
 Traffic Priority marks chosen connections with a DSCP: classes by
 interface, address, port and the DSCP a connection arrives with, each
-one pf match rule registered by the plugin at every filter reload and
-never added to the owner's own rules. pf writes the class's DSCP into
-every packet of its connections, both ways, the ECN bits kept. On a
+written as one pf match rule per interface, IP version and address
+pair, registered by the plugin at every filter reload and never added
+to the owner's own rules. pf writes the class's DSCP into every packet
+of its connections, both ways, the ECN bits kept. On a
 Sophos XGS, os-xgs-npu gives an IPv4 connection in hardware the DSCP pf
 marked it with (measured there with a normalization rule; with these
 rules not yet). Firewall: Shaper is neither read nor written, and no

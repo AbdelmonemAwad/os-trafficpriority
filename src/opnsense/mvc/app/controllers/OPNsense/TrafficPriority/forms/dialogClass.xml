@@ -26,14 +26,14 @@
         <id>class.description</id>
         <label>Description</label>
         <type>text</type>
-        <help>A name for the class, carried by its rules in pf's rule set after "Traffic Priority:".</help>
+        <help>A name for the class, shown after "Traffic Priority:" in OPNsense's rules file, /tmp/rules.debug. It cannot end with a backslash.</help>
     </field>
     <field>
         <id>class.interface</id>
         <label>Interfaces</label>
         <type>select_multiple</type>
         <hint>any</hint>
-        <help>Where connections come in. None chosen: every interface.</help>
+        <help>Where connections come in. None chosen: every interface. Connections a port forward (Firewall: NAT: Destination NAT) lets in with its Firewall rule set to Pass are not marked: pf passes them without reading any filter rule. Set it to Register rule, or to Manual with a rule of your own.</help>
     </field>
     <field>
         <id>class.ipprotocol</id>
@@ -91,6 +91,6 @@
         <id>class.dscp</id>
         <label>Set DSCP</label>
         <type>dropdown</type>
-        <help>DSCP pf writes into every packet of this class's connections, both ways, their two ECN bits left as they came. EF (46) is the usual mark for voice. A mark is fixed when a connection opens: a change reaches new connections.</help>
+        <help>DSCP pf writes into every packet of this class's connections, both ways, their two ECN bits left as they came. EF (46) is the usual mark for voice. A mark is fixed when a connection opens: a change reaches new connections. Firewall: Shaper probably sees the mark on uploads only, not measured: pf writes it as a packet comes in on the class's interface, and on a reply as it leaves by it, so a download arriving on the WAN still carries the DSCP it came with.</help>
     </field>
 </form>
