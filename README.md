@@ -37,15 +37,24 @@ Strict priority for chosen traffic - voice, games, the firewall's own management
   destination (addresses, networks, aliases, an interface's network, the firewall itself), their
   ports (a number, a name, a range or an alias of ports), and the DSCP a connection arrives with
   (any by default); and the DSCP to set, EF (46) by default, one of the 21 code points Firewall:
-  Shaper names;
+  Shaper names. A class has to narrow what it marks by at least one of these, the protocol and the
+  IP version aside;
 - **the rules** - registered by the plugin at every filter reload (`plugins.inc.d/trafficpriority.inc`,
   the way os-blocklists registers its own), one pf `match` rule for each interface, IP version and
   pair of addresses a class names. They are never added to the owner's own rules, so turning the
   plugin off or removing it leaves nothing there. Firewall: Shaper and Firewall: Settings:
   Normalization are neither read nor written;
-- **Applied** - for each class, what pf holds of it: its rules, the connections marked now and since
-  they were loaded, the packets and bytes pf saw, and - when a class makes no rule - why. The
-  switch's queue is "not measured yet" for every class;
+- **Applied** - for each class, what pf holds of it: its rules - or written to the rules file and
+  not loaded - the connections pf counted for them, open now and since the last filter reload, the
+  packets and bytes it saw, and - when a class makes no rule - why. Those counts are pf's for the
+  rules loaded by the last filter reload, so every reload, an Apply among them, starts them again
+  from 0, while connections keep their mark; a connection that two classes match is counted under
+  both. The card above them, **Marked now**, counts each connection pf holds with a class's DSCP
+  once, coming in, whenever it opened (`pfctl -v -s states`); an owner's normalization rule that sets
+  the same DSCP on connections coming in is counted with them, as pf does not say which rule set a
+  mark. When pf refused the rule set of the last filter reload, or the running OPNsense has no key to
+  write the mark with, the page says so rather than that nothing was applied yet. The switch's queue
+  is "not measured yet" for every class;
 - **General** - Enabled, **off by default**: nothing is marked until it is switched on and Applied.
 
 Off, the rules are gone at the next filter reload; the classes stay.
@@ -171,11 +180,15 @@ On 2026-11-17, from this branch, nothing installed on any firewall:
   ending in a backslash, a class that narrows nothing, a DSCP out of range, 0 to match, a class
   without an ID; nothing while off, the default; a rule OPNsense refuses leaving the reload and the
   other classes alone; and the key each release writes the mark with;
-- **the model** - `tools/test-mvc.php`, 31 checks, with stand-ins for OPNsense's MVC base: each of
-  those refusals at the save, on the field it concerns, a class read whole when any field of it
-  changed, and the message of OPNsense's own field type kept where it gave one;
-- **the page's numbers** - `tools/test-status.py`, 17 checks: `status.py` reading a `rules.debug` and
-  a `pfctl -v -s rules` as OPNsense and pfctl write them, by each class's label;
+- **the model and the page's API** - `tools/test-mvc.php`, 48 checks, with stand-ins for OPNsense's
+  MVC base: each of those refusals at the save, on the field it concerns, a class read whole when
+  any field of it changed, and the message of OPNsense's own field type kept where it gave one; the
+  status the page is given, an OPNsense with no key for the mark said, why each class makes no rule,
+  and Apply's filter reload;
+- **the page's numbers** - `tools/test-status.py`, 33 checks: `status.py` reading a `rules.debug`, a
+  `pfctl -v -s rules` and a `pfctl -v -s states` as OPNsense and pfctl write them, by each class's
+  label - a connection marked counted once, coming in, with the mark of a class pf holds rules for -
+  and a rule set pf refused told by `/tmp/rules.error`'s time;
 - **the self-update** - `tools/test-self-update.py`, 45 checks, as os-blocklists has it;
 - **the rest of the checks** - every installed file removed by the uninstaller
   (`tools/check-uninstall.sh`), `php -l`, `py_compile` and pyflakes, `sh -n`, XML and JSON, nothing

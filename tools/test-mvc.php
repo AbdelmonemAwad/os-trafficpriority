@@ -239,9 +239,13 @@ namespace {
     }
     require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Marking.php';
     require $root . '/src/opnsense/mvc/app/models/OPNsense/TrafficPriority/TrafficPriority.php';
+    require $root . '/src/opnsense/mvc/app/controllers/OPNsense/TrafficPriority/Api/ServiceController.php';
 
     use OPNsense\Base\BaseModel;
     use OPNsense\Base\Field;
+    use OPNsense\Core\Backend;
+    use OPNsense\TrafficPriority\Api\ServiceController;
+    use OPNsense\TrafficPriority\Marking;
     use OPNsense\TrafficPriority\TrafficPriority;
 
     /* the text the model gives each DSCP it offers to set, from its XML (read without SimpleXML, which
@@ -349,6 +353,72 @@ namespace {
     check(isset(saved([U1 => cls($everything, false)], [], true)[at('interface')]), 'the whole model validated: every class read');
     $two = saved([U1 => cls($everything, false), U2 => cls(['destination_port' => 'phones'])]);
     check(array_keys($two) === [at('destination_port', U2)], 'two classes: only the one that changed refused');
+
+    /* the page's API: status.py's answer through configd, and what the Applied tab is given */
+    $nokey = new class extends ServiceController {
+        protected function markKey()
+        {
+            return null;
+        }
+    };
+    $u3 = '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a03';
+    $u4 = '6F3B0E2C-1A4D-4C8E-9B7A-2D5E8F1C3A04';
+    $answer = ['enabled' => true, 'pf' => true, 'refused' => false, 'marked' => 2, 'classes' => [
+        ['uuid' => U1, 'written' => 2, 'not_placed' => 0, 'rules' => 2, 'states' => 4, 'created' => 19,
+            'packets' => 48420, 'bytes' => 9924690],
+        ['uuid' => strtolower($u4), 'written' => 1, 'not_placed' => 0, 'rules' => 0],
+    ]];
+    Backend::$answers = ['trafficpriority status' => json_encode($answer)];
+    $got = (new ServiceController())->statusAction();
+    check(($got['marked'] ?? null) === 2 && ($got['writes_mark'] ?? null) === true && Marking::markKey() !== null,
+        'status: status.py\'s answer, and this OPNsense writes the mark');
+    check(($nokey->statusAction()['writes_mark'] ?? null) === false, 'status: an OPNsense with no key for the mark: said');
+    foreach (['', 'not json', '"a string"', null] as $bad) {
+        Backend::$answers = ['trafficpriority status' => $bad];
+        check((new ServiceController())->statusAction() === ['error' => 'Status could not be read.'],
+            'status: configd answering ' . json_encode($bad) . ': could not be read');
+    }
+
+    Backend::$answers = ['trafficpriority status' => json_encode($answer)];
+    BaseModel::$given = [U1 => cls(), U2 => cls($everything), $u3 => cls(['destination_port' => "5060\n#"]),
+        $u4 => cls(['description' => 'Upper', 'dscp' => '34']), '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a05' => cls(['enabled' => '0'])];
+    BaseModel::$fieldMessages = [];
+    $grid = (new ServiceController())->searchAppliedAction();
+    $rows = [];
+    foreach ($grid['rows'] as $row) {
+        $rows[strtolower($row['uuid'])] = $row;
+    }
+    $one = $rows[U1] ?? [];
+    check(($one['problem'] ?? null) === '' && $one['enabled'] === true && $one['dscp'] === 'EF (46)' &&
+        [$one['written'], $one['rules'], $one['states'], $one['created'], $one['packets']] === [2, 2, 4, 19, 48420],
+        'applied: a class in pf, its counts from status.py and its DSCP as the model names it');
+    check(($rows[U2]['problem'] ?? null) === 'everything' && ($rows[$u3]['problem'] ?? null) === 'port',
+        'applied: why a class makes no rule, as the hook decides it');
+    check(($rows[strtolower($u4)]['written'] ?? null) === 1 && $rows[strtolower($u4)]['dscp'] === 'AF41 (34)',
+        'applied: a UUID in upper case in config.xml found in status.py\'s lower-case answer');
+    check(($rows['6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a05']['enabled'] ?? null) === false, 'applied: a class switched off');
+    check($grid['fields'] === ['description', 'dscp'] && $grid['sort'] === 'sequence', 'applied: searched by name and DSCP, by sequence');
+    $keyless = [];
+    foreach ($nokey->searchAppliedAction()['rows'] as $row) {
+        $keyless[strtolower($row['uuid'])] = $row['problem'];
+    }
+    check(($keyless[U1] ?? null) === 'key' && ($keyless[U2] ?? null) === 'everything',
+        'applied: with no key for the mark, every class that would make rules says so');
+
+    Backend::$answers = ['filter reload skip_alias' => "OK\n"];
+    Backend::$asked = [];
+    $get = new ServiceController();
+    $get->request->post = false;
+    check($get->reconfigureAction() === ['status' => 'failed'] && Backend::$asked === [], 'apply: only by POST');
+    check((new ServiceController())->reconfigureAction() === ['status' => 'ok'] && Backend::$asked === ['filter reload skip_alias'],
+        'apply: the filter reloaded, the aliases left, and OK taken');
+    foreach (['Execute error', '', null] as $out) {
+        Backend::$answers = ['filter reload skip_alias' => $out];
+        $failed_reload = (new ServiceController())->reconfigureAction();
+        check(($failed_reload['status'] ?? '') === 'failed' &&
+            strpos($failed_reload['status_msg'] ?? '', 'Filter reload did not finish.') === 0,
+            'apply: configd answering ' . json_encode($out) . ': failed, and said');
+    }
 
     echo ($failed ? "$failed of $checks checks failed\n" : "$checks checks passed\n");
     exit($failed ? 1 : 0);

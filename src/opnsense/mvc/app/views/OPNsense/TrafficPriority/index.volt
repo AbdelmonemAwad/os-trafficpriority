@@ -81,33 +81,40 @@
             'interface': "{{ lang._('interface field not readable') }}",
             'address': "{{ lang._('address field not readable') }}",
             'everything': "{{ lang._('nothing narrows it: it would mark every connection') }}",
-            'family': "{{ lang._('no source and destination of its IP version') }}"
+            'family': "{{ lang._('no source and destination of its IP version') }}",
+            'key': "{{ lang._('this OPNsense writes no mark on a rule') }}"
         };
 
         /*
-         * Four cards: on or off, the classes switched on that pf holds rules for, the connections their
-         * rules marked, and the switch's queues - not measured yet, so nothing is set there.
+         * Four cards: on or off, the classes switched on that pf holds rules for - and when pf refused the
+         * last rule set, or this OPNsense writes no mark, that instead - the connections pf holds now with
+         * a class's mark, each once (status.py's marked), and the switch's queues - not measured yet, so
+         * nothing is set there.
          */
         function draw(data) {
             const $cards = $('#tp-cards').empty();
+            $('#tp-refused, #tp-nokey').hide();
             if (!data || data.error) {
                 $cards.append(card('bad', 'fa-power-off', "{{ lang._('Traffic Priority') }}", "{{ lang._('Status could not be read.') }}", ''));
                 return;
             }
             const on = data.classes.filter(function (c) { return c.enabled; });
             const held = on.filter(function (c) { return c.rules > 0; });
-            const states = data.classes.reduce(function (n, c) { return n + (c.states || 0); }, 0);
-            const created = data.classes.reduce(function (n, c) { return n + (c.created || 0); }, 0);
+            const wrong = data.refused || data.writes_mark === false;
             $cards.append(card(data.enabled ? 'ok' : '', 'fa-power-off', "{{ lang._('Traffic Priority') }}",
                 data.enabled ? "{{ lang._('on') }}" : "{{ lang._('off') }}",
                 on.length + ' ' + "{{ lang._('classes switched on') }}"));
-            $cards.append(card(!data.enabled || !on.length ? '' : (held.length === on.length ? 'ok' : 'warn'), 'fa-list',
-                "{{ lang._('In pf') }}", held.length + ' / ' + on.length,
-                data.pf ? "{{ lang._('classes with rules loaded') }}" : "{{ lang._('pf could not be asked') }}"));
-            $cards.append(card('', 'fa-link', "{{ lang._('Marked now') }}", count(states),
-                count(created) + ' ' + "{{ lang._('since rules were loaded') }}"));
+            $cards.append(card(wrong ? 'bad' : (!data.enabled || !on.length ? '' : (held.length === on.length ? 'ok' : 'warn')),
+                'fa-list', "{{ lang._('In pf') }}", held.length + ' / ' + on.length,
+                !data.pf ? "{{ lang._('pf could not be asked') }}" :
+                    data.writes_mark === false ? "{{ lang._('this OPNsense writes no mark on a rule') }}" :
+                    data.refused ? "{{ lang._('last rule set refused by pf') }}" : "{{ lang._('classes with rules loaded') }}"));
+            $cards.append(card('', 'fa-link', "{{ lang._('Marked now') }}", count(data.marked),
+                "{{ lang._('connections with the DSCP of a class, each once') }}"));
             $cards.append(card('', 'fa-sitemap', "{{ lang._('Switch queues') }}", "{{ lang._('not measured yet') }}",
                 "{{ lang._('DSCP written; no queue set') }}"));
+            $('#tp-refused').toggle(!!data.refused);
+            $('#tp-nokey').toggle(data.writes_mark === false);
             $('#tp-project').toggle(!!data.project);
             $('#tp-pf-alone').toggle(!data.project);
         }
@@ -147,6 +154,9 @@
                             "{{ lang._('not placed') }}" + '</span>' : '';
                         if (row.rules) {
                             return count(row.rules) + ' ' + "{{ lang._('rules') }}" + placed;
+                        }
+                        if (row.written) {
+                            return '<span class="text-warning">' + "{{ lang._('written, not loaded') }}" + '</span>' + placed;
                         }
                         return "{{ lang._('not in pf') }}" + placed;
                     },
@@ -220,6 +230,12 @@
 </script>
 
 <div class="xgs-cards xgs-top" id="tp-cards"></div>
+<div id="tp-refused" class="alert alert-danger" role="alert" style="display: none;">
+    {{ lang._('pf refused the rule set of the last filter reload, and OPNsense loaded the one before it again: what pf holds of the classes is from that one. /tmp/rules.error says why.') }}
+</div>
+<div id="tp-nokey" class="alert alert-danger" role="alert" style="display: none;">
+    {{ lang._('This OPNsense writes no pf scrub option on a rule, so no class is applied; the system log says so, under Traffic Priority.') }}
+</div>
 <div class="text-muted clearfix" style="padding: 0 0 10px;">
     <button id="refreshAct" class="btn btn-default btn-xs pull-right" type="button" title="{{ lang._('Refresh') }}"><i class="fa fa-fw fa-refresh"></i></button>
     {{ lang._('A class marks connections that come in on its interfaces and match it with its DSCP, both ways, written by pf. A connection keeps the mark it opened with: a change reaches new connections.') }}
@@ -244,8 +260,8 @@
                     <th data-column-id="description" data-formatter="name" data-type="string">{{ lang._('Class') }}</th>
                     <th data-column-id="dscp" data-type="string" data-width="9em">{{ lang._('DSCP') }}</th>
                     <th data-column-id="rules" data-formatter="inpf" data-type="string" data-sortable="false">{{ lang._('In pf') }}</th>
-                    <th data-column-id="states" data-formatter="number" data-type="numeric" data-width="9em">{{ lang._('Marked now') }}</th>
-                    <th data-column-id="created" data-formatter="number" data-type="numeric" data-width="9em">{{ lang._('Marked since loaded') }}</th>
+                    <th data-column-id="states" data-formatter="number" data-type="numeric" data-width="9em">{{ lang._('Matched now') }}</th>
+                    <th data-column-id="created" data-formatter="number" data-type="numeric" data-width="10em">{{ lang._('Matched since reload') }}</th>
                     <th data-column-id="packets" data-formatter="number" data-type="numeric" data-visible="false">{{ lang._('Packets') }}</th>
                     <th data-column-id="bytes" data-formatter="number" data-type="numeric" data-visible="false">{{ lang._('Bytes') }}</th>
                     <th data-column-id="queue" data-formatter="queue" data-type="string" data-sortable="false" data-width="10em">{{ lang._('Switch queue') }}</th>
@@ -255,7 +271,10 @@
             <tfoot></tfoot>
         </table>
         <div class="text-muted" style="padding: 0 15px 10px;">
-            {{ lang._('Not in pf: class saved and not applied yet, or Traffic Priority off. Not placed: OPNsense wrote its rule commented out - an interface not there, an address it could not read. Packets and bytes are what pf saw.') }}
+            {{ lang._('Not in pf: class saved and not applied yet, or Traffic Priority off. Written, not loaded: the last filter reload wrote its rules and pf does not hold them. Not placed: OPNsense wrote its rule commented out - an interface not there, an address or a port it could not map.') }}
+        </div>
+        <div class="text-muted" style="padding: 0 15px 10px;">
+            {{ lang._('Matched now, Matched since reload, packets and bytes: what pf counted for the rules of each class. Every filter reload, an Apply among them, starts them again from 0 - packets and bytes too, unless the firewall keeps counters - while connections keep their mark; and a connection two classes match is counted under both, keeping the mark of the lower sequence. Marked now, above, counts each connection pf holds with the DSCP of a class once, whenever it opened.') }}
         </div>
         <div id="tp-project" class="text-muted" style="display: none; padding: 0 15px 15px;">
             {{ lang._('os-xgs-npu is installed: it puts a marked IPv4 connection into hardware with its DSCP and keeps a marked IPv6 connection with the host - measured with a normalization rule, not yet with these rules. A connection in hardware adds no more packets or bytes here.') }}
