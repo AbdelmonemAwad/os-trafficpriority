@@ -204,11 +204,22 @@ On 2026-11-17, from this branch, nothing installed on any firewall:
   dialog's labels, help and the DSCPs' names, the model's messages, the menu, the ACL and the PHP's -
   is listed in `source.json`; 29 of them had their Arabic in opnsense-arabic that day, and the others
   are to follow there;
+- **the installation** - `tools/test-install.py`, 29 checks: `install/install.sh`,
+  `install/uninstall.sh`, the package's `post-install.sh` and `post-deinstall.sh`, and
+  `place-menu.sh`, run in a temporary root with stand-ins for `service`, `configctl` and `pfctl` -
+  every file laid down with its mode and taken away again, the menu in XGS or Firewall, nothing
+  copied when a file has a syntax error, the rules hook gone before the filter reload that takes
+  its rules out of pf, and a rule still in pf said;
 - **the rest of the checks** - every installed file removed by the uninstaller
   (`tools/check-uninstall.sh`), `php -l`, `py_compile` and pyflakes, `sh -n`, XML and JSON, nothing
   private, no Arabic in the code, the page kit.
 
 30 behaviours those tests cover were taken out in turn, on a copy, and the tests failed on each.
+Later that day a review's fixes, and the behaviours newly tested, were taken out the same way, 70
+of them - in Marking, the hook, the model, the page's API, `status.py`, the strings check, the
+install scripts and `place-menu.sh` - and the tests caught 69. The one left changes nothing: without
+its own `rm` of the menu file, `uninstall.sh`'s `rm -rf` of the model's directory takes the file
+with it.
 
 Not tested: anything on a firewall.
 

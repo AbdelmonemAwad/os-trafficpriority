@@ -95,6 +95,12 @@ jobs:
       - name: Every file the installer lays down is removed by the uninstaller
         run: sh tools/check-uninstall.sh .
 
+      # The installer, the removal, the package's scripts and place-menu.sh, run in a temporary root
+      # with stand-ins for service, configctl and pfctl: what they lay down and take away, where the
+      # menu goes, and that the rules hook is gone before the reload that takes its rules out of pf.
+      - name: Install, removal and menu, in a temporary root
+        run: python3 tools/test-install.py
+
   syntax:
     name: syntax
     runs-on: ubuntu-latest
