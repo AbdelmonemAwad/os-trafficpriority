@@ -9,7 +9,7 @@ name: checks
 # Everything here is cheap and deterministic: it parses files and compares them with
 # each other. There is no OPNsense to install on a GitHub runner and no appliance to
 # measure, so this does not pretend to test behaviour - it catches the mistakes that
-# have actually happened while this plugin was being written:
+# have actually happened while this plugin's family was being written:
 #
 #   * a template that no longer compiles, which takes the whole page to the crash
 #     reporter and tells the reader nothing;
@@ -17,6 +17,11 @@ name: checks
 #   * a string added to the page or to a data file and never translated, which shows
 #     up as one English sentence in the middle of an Arabic page;
 #   * an address from the machine this was written on, left in an example.
+#
+# And one this plugin adds: a rule the hook registers that pfctl would refuse. pfctl
+# refuses the whole rule set for one bad rule, every rule of the owner's with it, so the
+# rules are written out here by OPNsense's own classes - of 26.7, which has no key of its
+# own for pf's scrub options, and of 26.7.9, which has - and checked against pfctl's grammar.
 
 on:
   push:
@@ -28,6 +33,41 @@ permissions:
   contents: read
 
 jobs:
+  rules:
+    name: rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # OPNsense's rule classes as each release has them, read and run by the test, nothing else of
+      # opnsense/core: Plugin, FilterRule, Rule and Util.
+      - name: OPNsense 26.7's rule classes
+        uses: actions/checkout@v7
+        with:
+          repository: opnsense/core
+          ref: '26.7'
+          path: core-26.7
+          persist-credentials: false
+          sparse-checkout: src/opnsense/mvc/app/library/OPNsense/Firewall
+
+      - name: OPNsense 26.7.9's rule classes
+        uses: actions/checkout@v7
+        with:
+          repository: opnsense/core
+          ref: '26.7.9'
+          path: core-26.7.9
+          persist-credentials: false
+          sparse-checkout: src/opnsense/mvc/app/library/OPNsense/Firewall
+
+      # The rules plugins.inc.d/trafficpriority.inc registers for sample classes, as OPNsense writes
+      # them into /tmp/rules.debug: match rules, never quick, before every rule of OPNsense's, the
+      # DSCP as pf's scrub option, nothing written for a class pfctl would refuse.
+      - name: The rules hook, with OPNsense 26.7's classes
+        run: OPNSENSE_CORE=core-26.7/src php tools/test-rules.php
+
+      - name: The rules hook, with OPNsense 26.7.9's classes
+        run: OPNSENSE_CORE=core-26.7.9/src php tools/test-rules.php
+
   syntax:
     name: syntax
     runs-on: ubuntu-latest
@@ -48,7 +88,9 @@ jobs:
       - name: PHP
         run: |
           shopt -s globstar nullglob
-          files=(src/**/*.php)
+          # .inc too: plugins.inc.d's rules hook is PHP that every filter reload includes, and an
+          # error in it stops them all; and the test, which is PHP the checks run.
+          files=(src/**/*.php src/**/*.inc tools/**/*.php)
           [ ${#files[@]} -gt 0 ] || { echo "no PHP here"; exit 0; }
           for f in "${files[@]}"; do php -l "$f"; done
 
@@ -65,7 +107,7 @@ jobs:
       # Well-formed is not enough for one of those files. A comment inside a widget's
       # <translations> element reaches gettext() as a value; two of them reach it as an
       # array, and the TypeError that follows empties every dashboard in the GUI with
-      # nothing in any log naming the file. This plugin was one comment away from it.
+      # nothing in any log naming the file.
       - name: Widget metadata
         run: |
           [ -f tools/check-widget-metadata.py ] || { echo "no widget here"; exit 0; }
@@ -88,7 +130,7 @@ jobs:
           # at boot, pkg/ is run by pkg(8) as root in the middle of an install or a
           # removal, and tools/ is run on the firewall by whoever is building a package.
           # Every one of them is a place where a syntax error is found too late.
-          for f in install/*.sh tools/*.sh pkg/*.sh src/etc/rc.d/* src/etc/rc.syshook.d/**/*; do
+          for f in install/*.sh tools/*.sh pkg/*.sh src/etc/rc.d/* src/etc/rc.syshook.d/**/* src/opnsense/scripts/**/*.sh; do
             [ -f "$f" ] || continue
             head -n1 "$f" | grep -q '^#!' || continue
             sh -n "$f" && echo "ok $f"
@@ -119,14 +161,17 @@ jobs:
 
       # Text that lives in a data file reaches the page through a generated map. A note
       # added to a JSON file and not regenerated here comes out in English on an Arabic
-      # page, and nothing in the build says so. That is the bug this step exists for; it
-      # has happened.
+      # page, and nothing in the build says so.
       - name: The generated data-string map is current
         run: |
           [ -f tools/gen-data-strings.py ] || { echo "not this plugin"; exit 0; }
           python3 tools/gen-data-strings.py --check
 
       - name: Every string the page asks for is in the catalogue
+        # A contributor's pull request (from a fork) and main may carry a string whose Arabic follows
+        # later (CONTRIBUTING.md): a warning there; on a branch of this repository a failure, as before.
+        env:
+          ARABIC_LATER: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository) && '1' || '' }}
         run: |
           [ -f tools/check-strings.py ] || { echo "not this plugin"; exit 0; }
           python3 tools/check-strings.py
