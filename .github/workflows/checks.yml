@@ -68,6 +68,10 @@ jobs:
       - name: The rules hook, with OPNsense 26.7.9's classes
         run: OPNSENSE_CORE=core-26.7.9/src php tools/test-rules.php
 
+      # status.py's reading of the rules pf was given and of pf's own counters, by each class's label.
+      - name: The page says what pf holds of each class
+        run: python3 tools/test-status.py
+
   syntax:
     name: syntax
     runs-on: ubuntu-latest

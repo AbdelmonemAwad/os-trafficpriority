@@ -1,0 +1,96 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<form>
+    <field>
+        <id>class.enabled</id>
+        <label>Enabled</label>
+        <type>checkbox</type>
+        <grid_view>
+            <type>boolean</type>
+            <formatter>rowtoggle</formatter>
+            <width>6em</width>
+        </grid_view>
+    </field>
+    <field>
+        <id>class.sequence</id>
+        <label>Sequence</label>
+        <type>text</type>
+        <help>When two classes match the same connection, the one with the lower number sets its DSCP.</help>
+        <grid_view>
+            <width>7em</width>
+        </grid_view>
+    </field>
+    <field>
+        <id>class.description</id>
+        <label>Description</label>
+        <type>text</type>
+        <help>The class's name. Its rules carry it in pf's rule set, after "Traffic Priority:".</help>
+    </field>
+    <field>
+        <id>class.interface</id>
+        <label>Interfaces</label>
+        <type>select_multiple</type>
+        <hint>any</hint>
+        <help>Where the connections come in. None chosen: every interface.</help>
+    </field>
+    <field>
+        <id>class.ipprotocol</id>
+        <label>IP version</label>
+        <type>dropdown</type>
+        <help>IPv4 by default. On a Sophos XGS with os-xgs-npu, a marked IPv6 connection stays with the host - its fast path does not write an IPv6 traffic class - so that connection is not forwarded in hardware.</help>
+        <grid_view>
+            <visible>false</visible>
+        </grid_view>
+    </field>
+    <field>
+        <id>class.protocol</id>
+        <label>Protocol</label>
+        <type>dropdown</type>
+        <help>A port needs TCP, UDP or TCP/UDP.</help>
+    </field>
+    <field>
+        <id>class.source_net</id>
+        <label>Source</label>
+        <type>text</type>
+        <style>net_selector net_selector_multi</style>
+        <help>Where the connections come from: addresses, networks, an alias, an interface's network. any: every source.</help>
+    </field>
+    <field>
+        <id>class.source_port</id>
+        <label>Source port</label>
+        <type>text</type>
+        <style>port_selector</style>
+        <help>The port the connections come from: mostly left empty. A number, a name, a range (10000-20000) or an alias of ports.</help>
+        <grid_view>
+            <visible>false</visible>
+        </grid_view>
+    </field>
+    <field>
+        <id>class.destination_net</id>
+        <label>Destination</label>
+        <type>text</type>
+        <style>net_selector net_selector_multi</style>
+        <help>Where the connections go: addresses, networks, an alias, an interface's network or (self), the firewall itself. any: every destination.</help>
+    </field>
+    <field>
+        <id>class.destination_port</id>
+        <label>Destination port</label>
+        <type>text</type>
+        <style>port_selector</style>
+        <help>The port the connections go to: a number, a name (sip, https), a range (10000-20000) or an alias of ports.</help>
+    </field>
+    <field>
+        <id>class.match_dscp</id>
+        <label>Arriving with DSCP</label>
+        <type>dropdown</type>
+        <help>Only connections whose first packet arrives with this DSCP - a phone or a game that marks its own traffic, say. Any: whatever they carry. Best Effort (0) cannot be told apart from Any in pf.</help>
+    </field>
+    <field>
+        <id>class.dscp</id>
+        <label>Set DSCP</label>
+        <type>dropdown</type>
+        <help>The DSCP pf writes into every packet of the class's connections, both ways, the two ECN bits left as they came. EF (46) is the usual mark for voice. The mark is fixed when a connection opens: a change reaches new connections.</help>
+    </field>
+</form>

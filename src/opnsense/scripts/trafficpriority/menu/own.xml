@@ -1,0 +1,14 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<menu>
+    <!--
+        Where os-xgs-npu is not installed: under Firewall, beside Rules and Shaper, because this page
+        adds rules to the one and works beside the other (it neither reads nor writes Shaper). No order
+        is given. place-menu.sh copies this file, or xgs.xml, to the model's Menu/Menu.xml.
+    -->
+    <Firewall>
+        <TrafficPriority VisibleName="Traffic Priority" cssClass="fa fa-arrow-up-wide-short fa-fw" url="/ui/trafficpriority"/>
+    </Firewall>
+</menu>

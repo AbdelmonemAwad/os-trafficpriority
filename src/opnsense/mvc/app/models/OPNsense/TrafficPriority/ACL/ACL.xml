@@ -1,0 +1,14 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<acl>
+    <page-firewall-trafficpriority>
+        <name>Firewall: Traffic Priority</name>
+        <description>Allow access to traffic priority: its classes, the DSCP each one marks, and the firewall rules it registers</description>
+        <patterns>
+            <pattern>ui/trafficpriority/*</pattern>
+            <pattern>api/trafficpriority/*</pattern>
+        </patterns>
+    </page-firewall-trafficpriority>
+</acl>
