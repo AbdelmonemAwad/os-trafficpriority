@@ -8,10 +8,11 @@
  * OPNsense's own classes - the Plugin, FilterRule, Rule and Util of the OPNsense tree OPNSENSE_CORE
  * names (its opnsense/mvc/app/library/OPNsense/Firewall/ is read: /usr/local on a firewall, or the
  * src/ of an opnsense/core checkout) - with stand-ins only for what they reach outside themselves:
- * the configuration (Config), the aliases (Alias) and the well-known ports (PortField). Each rule is
- * the line OPNsense would write into /tmp/rules.debug, checked against what pfctl takes on FreeBSD 15.1
- * (Marking.php cites the grammar). checks.yml runs it on OPNsense 26.7 and 26.7.9: the first has no
- * key of its own for pf's scrub options, the second has.
+ * the configuration (Config, or the Filter model's settings on opnsense/core's main branch), the
+ * aliases (Alias) and the well-known ports (PortField). Each rule is the line OPNsense would write
+ * into /tmp/rules.debug, checked against what pfctl takes on FreeBSD 15.1 (Marking.php cites the
+ * grammar). checks.yml runs it on OPNsense 26.7 and 26.7.9: the first has no key of its own for pf's
+ * scrub options, the second has.
  *
  *   OPNSENSE_CORE=<core checkout>/src php tools/test-rules.php
  */
@@ -61,6 +62,23 @@ namespace OPNsense\Firewall {
             foreach (Alias::$given as $i => $alias) {
                 yield 'uuid-' . $i => (object)$alias;
             }
+        }
+    }
+
+    /* opnsense/core after 26.7 (its main branch): Plugin's constructor reads the filter's settings from
+       the Filter model; none is set here */
+    class Filter
+    {
+        public $settings;
+
+        public function __construct()
+        {
+            $this->settings = new class {
+                public function getNodeContent()
+                {
+                    return [];
+                }
+            };
         }
     }
 

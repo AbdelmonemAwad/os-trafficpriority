@@ -146,8 +146,9 @@ stays counted while it is open.
 On 2026-11-17, from this branch, nothing installed on any firewall:
 
 - **the rules** - `tools/test-rules.php`, 69 checks, run with OPNsense's own Plugin, FilterRule, Rule
-  and Util of three releases: 26.7 and 26.7.9 from opnsense/core's tags, and 26.7.3's (identical to
-  26.7.4 and 26.7.5 in these files), under PHP 8.5. For sample classes it checks the line OPNsense
+  and Util of four releases - 26.7, 26.7.8 and 26.7.9 from opnsense/core's tags, and 26.7.3's
+  (identical to 26.7.4 and 26.7.5 in these files) - and of opnsense/core's main branch of that day,
+  under PHP 8.5. For sample classes it checks the line OPNsense
   writes - match, in, never quick, no state, no reply-to, the DSCP's ECN bits clear, the label -
   against pfctl's grammar; one rule per interface and IP version; priority 0 ahead of OPNsense's own;
   the sequence's order; no rule, and the reason in the log, for an address pair of two versions, a
