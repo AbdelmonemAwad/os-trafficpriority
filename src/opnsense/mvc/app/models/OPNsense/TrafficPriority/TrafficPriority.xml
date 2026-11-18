@@ -1,0 +1,152 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<model>
+    <mount>//OPNsense/TrafficPriority</mount>
+    <version>1.0.0</version>
+    <description>Traffic priority</description>
+    <items>
+        <!--
+            plugins.inc.d/trafficpriority.inc reads these straight out of config.xml by element name
+            during a filter reload, and status.py reads them too, so the names are not free.
+        -->
+        <general>
+            <!-- off by default: what changes the traffic stays off until its owner turns it on -->
+            <enabled type="BooleanField">
+                <Required>Y</Required>
+                <Default>0</Default>
+            </enabled>
+        </general>
+        <classes>
+            <class type="ArrayField">
+                <enabled type="BooleanField">
+                    <Required>Y</Required>
+                    <Default>1</Default>
+                </enabled>
+                <!-- of two classes that match one connection, the lower number sets its DSCP -->
+                <sequence type="IntegerField">
+                    <Required>Y</Required>
+                    <Default>100</Default>
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>9999</MaximumValue>
+                    <ValidationMessage>A number from 1 to 9999.</ValidationMessage>
+                </sequence>
+                <description type="DescriptionField">
+                    <Required>Y</Required>
+                </description>
+                <!-- empty: every interface; as Firewall: Rules has it (Filter.xml) -->
+                <interface type="InterfaceField">
+                    <Required>N</Required>
+                    <Multiple>Y</Multiple>
+                    <Filters>
+                        <if>/^(?!lo0$).*/</if>
+                    </Filters>
+                    <AllowDynamic>Y</AllowDynamic>
+                </interface>
+                <!--
+                    IPv4 by default: os-xgs-npu keeps a marked IPv6 connection with the host, its fast
+                    path not writing an IPv6 traffic class (its flow-dscp6-2026-10-24.md).
+                -->
+                <ipprotocol type="OptionField">
+                    <Required>Y</Required>
+                    <Default>inet</Default>
+                    <OptionValues>
+                        <inet>IPv4</inet>
+                        <inet6>IPv6</inet6>
+                        <inet46>IPv4 and IPv6</inet46>
+                    </OptionValues>
+                </ipprotocol>
+                <protocol type="OptionField">
+                    <Required>Y</Required>
+                    <Default>any</Default>
+                    <OptionValues>
+                        <any>any</any>
+                        <tcp>TCP</tcp>
+                        <udp>UDP</udp>
+                        <tcpudp value="tcp/udp">TCP/UDP</tcpudp>
+                    </OptionValues>
+                </protocol>
+                <source_net type="NetworkAliasField">
+                    <Required>Y</Required>
+                    <Default>any</Default>
+                    <Multiple>Y</Multiple>
+                </source_net>
+                <source_port type="PortField">
+                    <EnableWellKnown>Y</EnableWellKnown>
+                    <EnableRanges>Y</EnableRanges>
+                    <EnableAlias>Y</EnableAlias>
+                    <ValidationMessage>A port number, a name, an alias of ports or a range.</ValidationMessage>
+                </source_port>
+                <destination_net type="NetworkAliasField">
+                    <Required>Y</Required>
+                    <Default>any</Default>
+                    <Multiple>Y</Multiple>
+                </destination_net>
+                <destination_port type="PortField">
+                    <EnableWellKnown>Y</EnableWellKnown>
+                    <EnableRanges>Y</EnableRanges>
+                    <EnableAlias>Y</EnableAlias>
+                    <ValidationMessage>A port number, a name, an alias of ports or a range.</ValidationMessage>
+                </destination_port>
+                <!--
+                    The DSCPs Firewall: Shaper names (TrafficShaper.xml), by number. pf cannot match 0 -
+                    it takes it for no DSCP asked - so it is not offered here.
+                -->
+                <match_dscp type="OptionField">
+                    <Required>N</Required>
+                    <BlankDesc>Any</BlankDesc>
+                    <OptionValues>
+                        <cs1 value="8">CS1 (8)</cs1>
+                        <af11 value="10">AF11 (10)</af11>
+                        <af12 value="12">AF12 (12)</af12>
+                        <af13 value="14">AF13 (14)</af13>
+                        <cs2 value="16">CS2 (16)</cs2>
+                        <af21 value="18">AF21 (18)</af21>
+                        <af22 value="20">AF22 (20)</af22>
+                        <af23 value="22">AF23 (22)</af23>
+                        <cs3 value="24">CS3 (24)</cs3>
+                        <af31 value="26">AF31 (26)</af31>
+                        <af32 value="28">AF32 (28)</af32>
+                        <af33 value="30">AF33 (30)</af33>
+                        <cs4 value="32">CS4 (32)</cs4>
+                        <af41 value="34">AF41 (34)</af41>
+                        <af42 value="36">AF42 (36)</af42>
+                        <af43 value="38">AF43 (38)</af43>
+                        <cs5 value="40">CS5 (40)</cs5>
+                        <ef value="46">EF (46)</ef>
+                        <cs6 value="48">CS6 (48)</cs6>
+                        <cs7 value="56">CS7 (56)</cs7>
+                    </OptionValues>
+                </match_dscp>
+                <dscp type="OptionField">
+                    <Required>Y</Required>
+                    <Default>46</Default>
+                    <OptionValues>
+                        <be value="0">Best Effort (0)</be>
+                        <cs1 value="8">CS1 (8)</cs1>
+                        <af11 value="10">AF11 (10)</af11>
+                        <af12 value="12">AF12 (12)</af12>
+                        <af13 value="14">AF13 (14)</af13>
+                        <cs2 value="16">CS2 (16)</cs2>
+                        <af21 value="18">AF21 (18)</af21>
+                        <af22 value="20">AF22 (20)</af22>
+                        <af23 value="22">AF23 (22)</af23>
+                        <cs3 value="24">CS3 (24)</cs3>
+                        <af31 value="26">AF31 (26)</af31>
+                        <af32 value="28">AF32 (28)</af32>
+                        <af33 value="30">AF33 (30)</af33>
+                        <cs4 value="32">CS4 (32)</cs4>
+                        <af41 value="34">AF41 (34)</af41>
+                        <af42 value="36">AF42 (36)</af42>
+                        <af43 value="38">AF43 (38)</af43>
+                        <cs5 value="40">CS5 (40)</cs5>
+                        <ef value="46">EF (46)</ef>
+                        <cs6 value="48">CS6 (48)</cs6>
+                        <cs7 value="56">CS7 (56)</cs7>
+                    </OptionValues>
+                </dscp>
+            </class>
+        </classes>
+    </items>
+</model>

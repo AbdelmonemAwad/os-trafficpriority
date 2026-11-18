@@ -7,7 +7,7 @@
 on the Security tab - where only you and the owner see it, and the fix can be prepared before anything is
 public. Without a GitHub account, write to **security@npuforge.org**. Either way, include:
 
-- what is affected - its classes, its page and the queues it configures;
+- what is affected - its classes and its page;
 - the appliance, the version you installed, and the OPNsense version;
 - how to reproduce it, and what you saw.
 

@@ -1,6 +1,6 @@
 # Working on this
 
-A plugin, planned: strict priority for chosen traffic - voice, games, the firewall's own management - applied where that traffic actually flows: in the queues of a Sophos XGS's coprocessor and of its switch, which forwarded traffic never leaves.
+A plugin, written, not released: priority for chosen traffic - voice, games, the firewall's own management. Its goal is strict priority where that traffic actually flows, in the queues of an XGS appliance's coprocessor and switch, which forwarded traffic never leaves; its first part marks the chosen connections with a DSCP, through pf, and sets no queue yet.
 
 It is one part of the [os-xgs-npu](https://github.com/AbdelmonemAwad/os-xgs-npu) project, and works the same way.
 
@@ -15,7 +15,10 @@ It is one part of the [os-xgs-npu](https://github.com/AbdelmonemAwad/os-xgs-npu)
 - **Every string on a page has its Arabic** in
   [opnsense-arabic](https://github.com/AbdelmonemAwad/opnsense-arabic)'s catalogue. If you do not write
   Arabic, leave it out: a pull request that adds or changes a menu entry, a form's label or help, or a
-  new page is merged without it, and the string shows in English until its Arabic follows.
+  new page is merged without it, and the string shows in English until its Arabic follows. Do list
+  the string in `src/opnsense/scripts/trafficpriority/i18n/ui/source.json`: `tools/check-strings.py`
+  reads every string the GUI shows - the page, the forms, the model's messages and options, the menu,
+  the ACL and the PHP's `gettext()` - and fails on one that is not listed there.
 
 ## Copyright, and what a contribution agrees to
 

@@ -18,5 +18,5 @@
   <rect x="80" y="96" width="4" height="108" rx="2" fill="#9A6700"/>
   <text x="108" y="140" font-family="ui-sans-serif,-apple-system,Segoe UI,Inter,Helvetica,Arial,sans-serif" font-size="54" font-weight="700" fill="#1F2328" letter-spacing="-1">os-trafficpriority</text>
   <text x="110" y="182" font-family="ui-sans-serif,-apple-system,Segoe UI,Inter,Helvetica,Arial,sans-serif" font-size="22" font-weight="500" fill="#59636E">Strict priority for chosen traffic, where it actually flows</text>
-  <text x="110" y="216" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" fill="#6E7781">coprocessor &amp; switch queues &#183; by port, address or DSCP &#183; planned OPNsense plugin</text>
+  <text x="110" y="216" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" fill="#6E7781">coprocessor &amp; switch queues &#183; by port, address or DSCP &#183; written, not released</text>
 </svg>
