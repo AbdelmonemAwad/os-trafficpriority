@@ -21,7 +21,7 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
 > Traffic Priority as a plugin of its own. No code has been written or moved into it, and there is no
 > release.~~
 >
-> **Written, not released (2026-11-17).** The first part is here: classes of connections, each
+> ~~**Written, not released (2026-11-17).**~~ **1.0.0, the first release (2026-11-18).** The first part is here: classes of connections, each
 > marked with a DSCP by pf. Which switch queue a marked frame then waits in is the next part, and
 > is not measured yet. Tried the same day on a lab appliance, an XGS 3300; what was run is under
 > [What is tested](#what-is-tested).
