@@ -5,9 +5,9 @@ pair, registered by the plugin at every filter reload and never added
 to the owner's own rules. pf writes the class's DSCP into every packet
 of its connections, both ways, the ECN bits kept. On a
 Sophos XGS, os-xgs-npu gives an IPv4 connection in hardware the DSCP pf
-marked it with (measured there with a normalization rule; with these
-rules not yet). Firewall: Shaper is neither read nor written, and no
-switch queue is set: that mapping is not measured yet.
+marked it with (measured on an XGS 3300 with this plugin's own rule, on
+2026-11-17; on an XGS 136 not yet). Firewall: Shaper is neither read nor
+written, and no switch queue is set: that mapping is not measured yet.
 
 Plugin Changelog
 ================

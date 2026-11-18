@@ -5,7 +5,7 @@
 </picture>
 
 <p align="center">
-  <img alt="status: written, not released" src="https://img.shields.io/badge/status-written%2C%20not%20released-lightgrey.svg?style=flat-square">
+  <a href="https://github.com/AbdelmonemAwad/os-trafficpriority/releases/latest"><img alt="the newest release" src="https://img.shields.io/github/v/release/AbdelmonemAwad/os-trafficpriority?sort=semver&amp;style=flat-square&amp;label=release&amp;color=8250df"></a>
   <a href="https://github.com/AbdelmonemAwad/os-trafficpriority/actions/workflows/checks.yml"><img alt="checks on main" src="https://img.shields.io/github/actions/workflow/status/AbdelmonemAwad/os-trafficpriority/checks.yml?branch=main&amp;style=flat-square&amp;label=checks"></a>
   <a href="LICENSE"><img alt="licence: BSD-2-Clause" src="https://img.shields.io/badge/licence-BSD--2--Clause-blue.svg?style=flat-square"></a>
   <a href="#what-is-tested"><img alt="OPNsense 26.7" src="https://img.shields.io/badge/OPNsense-26.7-d94f00.svg?style=flat-square"></a>
@@ -21,7 +21,7 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
 > Traffic Priority as a plugin of its own. No code has been written or moved into it, and there is no
 > release.~~
 >
-> **Written, not released (2026-11-17).** The first part is here: classes of connections, each
+> ~~**Written, not released (2026-11-17).**~~ **1.0.0, the first release (2026-11-18).** The first part is here: classes of connections, each
 > marked with a DSCP by pf. Which switch queue a marked frame then waits in is the next part, and
 > is not measured yet. Tried the same day on a lab appliance, an XGS 3300; what was run is under
 > [What is tested](#what-is-tested).
@@ -252,8 +252,7 @@ page in a browser.
 
 ## Installation
 
-It is not in the OPNsense plugin repository, so there is no `pkg install os-trafficpriority`, and
-there is no release yet.
+It is not in the OPNsense plugin repository, so there is no `pkg install os-trafficpriority`.
 
 **From a checkout** of this repository, on the firewall, as root:
 
@@ -272,10 +271,10 @@ of its rules - none, when the reload loaded; when it did not, OPNsense loads the
 again, these rules with it, and the script says so and exits 1. The settings stay in config.xml. A
 connection marked before keeps its mark until it ends.
 
-**From a package**, once there is a release: `tools/make-package.sh` builds it on a firewall, and
-`release.yml` in a FreeBSD virtual machine for each release, as os-blocklists does. `pkg delete
-os-trafficpriority` takes the rules hook with the files and reloads the filter, so the rules leave
-pf.
+**From a release's package.** A release carries `os-trafficpriority-<version>.pkg` and `SHA256SUMS`,
+built by `tools/make-package.sh` in a FreeBSD virtual machine by `release.yml`, as os-blocklists'
+are; installing it is not tested yet. `pkg delete os-trafficpriority` takes the rules hook with the
+files and reloads the filter, so the rules leave pf.
 
 ## Updates
 
