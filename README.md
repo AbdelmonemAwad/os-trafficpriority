@@ -27,8 +27,9 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
 >
 > **The second part, written, not released (2026-11-19):** the switch's queues, a minimum for a class,
 > and Firewall: Shaper followed. It needs os-xgs-npu's switch tool (`switch_qos.py`, in os-xgs-npu's
-> pull request of the same day), and neither has run on an appliance yet: the checks below are all
-> that has run. Until the lab has measured it, nothing here says it works on the wire.
+> pull request of the same day). Both ran on the second XGS 3300 on 2026-11-19: what was measured
+> there is said below, and what was not; os-xgs-npu turning port 0's pause off itself, which the
+> minimums need, has not run on an appliance yet.
 
 <p align="center"><b>Contents:</b> <a href="#what-it-does">What it does</a> &middot; <a href="#how-a-class-marks-its-connections">How a class marks its connections</a> &middot; <a href="#the-switchs-queues">The switch's queues</a> &middot; <a href="#following-firewall-shaper">Following Firewall: Shaper</a> &middot; <a href="#on-a-sophos-xgs">On a Sophos XGS</a> &middot; <a href="#not-yet-and-why">Not yet, and why</a> &middot; <a href="#what-is-tested">What is tested</a> &middot; <a href="#installation">Installation</a> &middot; <a href="#updates">Updates</a> &middot; <a href="#where-it-fits">Where it fits</a> &middot; <a href="#licence">Licence</a></p>
 
@@ -176,7 +177,19 @@ runs and what it did.
 - **strict, or minimums** - classes in the switch without a minimum are strict: their queues go before
   every other, top queues first (7, then 6), and can take a whole port - the stream above did. With
   minimums they are weighted: under full load each queue keeps at least its part of the port, and the
-  rest of the traffic (queue 0) keeps what is left. The two are not mixed - a strict queue would go
+  rest of the traffic (queue 0) keeps what is left. To keep the parts, os-xgs-npu turns off flow
+  control - the pause - on the coprocessor's uplink, the switch's port 0, after it writes the weights,
+  and puts it back as it found it, first, when they go: the switch then drops what the coprocessor
+  sends beyond what a port takes, instead of holding the coprocessor back. With the pause on the parts
+  never showed: the queue a class fills first held the whole backlog the pause lets in, and the other
+  queue's frames were dropped as they arrived. Measured on the second XGS 3300 on 2026-11-19 into a
+  full Port8, the pause turned off by hand: minimums of 30 and 20 gave 57.9 against 38.7 Mbit/s by UDP
+  at a 100 Mbit/s port and 534.5 against 370.5 by TCP at line rate, where with the pause on they had
+  87.2 against 9.6 and 913.6 against 17.7; a minimum of 30 against the 50 left to the rest of the
+  traffic gave 352.4 against 568.9. The cost: 1 to 3 % of the line rate for two streams, 4 % for one
+  alone, and more retransmissions
+  ([switch-weights-2026-11-19](https://github.com/AbdelmonemAwad/os-xgs-npu/blob/main/docs/measurements/switch-weights-2026-11-19.md)).
+  Strict classes leave the pause as found. The two are not mixed - a strict queue would go
   before the weighted one and leave it no minimum: every class with a switch queue has a minimum, or
   none has. The page refuses the mix at the save, and Apply gives the switch nothing while config.xml
   holds one, and says why;
@@ -191,16 +204,18 @@ runs and what it did.
   engine as the host, with no lock between them. So os-xgs-npu reads each entry back in the session
   that loads it and flushes it at once if it does not read as written; reads the vendor's entries
   beside ours before and after it writes, and does not keep a run during which they changed; and reads
-  entries 3 and 255 and port 0's mode again whenever the page asks the status - the card says so when
-  they no longer hold what Apply set;
+  entries 3 and 255, port 0's mode and its pause again whenever the page asks the status - the card
+  says so when they no longer hold what Apply set;
 - **putting back** - Traffic Priority switched off, or removed, takes its settings file for the switch
   away first, then os-xgs-npu puts back what it set, as it found it. What cannot be put back is never
   set again: it stays in os-xgs-npu's state, put back at the next boot of the coprocessor, and the page
   says the put-back failed;
-- **not measured yet** - pf's mark from a class into the switch's queue end to end, a minimum held
-  under a full port, entry 255 (behind the vendor's drop-all 254), a weight sequence written, the rule
-  that sets every IPv4 connection's DSCP to 0 on the wire, and whether the switch counts its turns in
-  frames or in bytes. The XGS 3300 read the weight sequence's length (99), not the sequence.
+- **not measured yet** - os-xgs-npu turning the pause off itself (for the runs above it was turned off
+  by hand), a part from a Firewall: Shaper weight with the pause off, the other front ports while one
+  is full with the pause off, and whether the switch counts its turns in frames or in bytes. Measured
+  besides on 2026-11-19: pf's mark from a class into its queue - entry 3 counted 78,691 frames of a
+  class's, and queue 7 sent 78,690 of them - and entry 255, behind the vendor's drop-all 254, counting
+  79,086 of the other class's; and the weight sequence written, 105 turns, and read back.
 
 Not on the XGS 136 yet: its switch is the same chip, but its network agent shares the bus, and the
 host's reads have taken ports down there (os-xgs-npu #639, #706), so os-xgs-npu only reads it, and the
@@ -271,15 +286,17 @@ stays counted while it is open.
 
 ## Not yet, and why
 
-- **the switch's queues on an appliance** - written (2026-11-19), with os-xgs-npu's switch tool, and
-  not yet run on one. Measured before them, on the second XGS 3300 on 2026-11-17, with a switch
-  entry written for the test and taken away after: EF from the coprocessor in queue 7, TCP at line
-  rate. A stream marked EF took 922 to 931 Mbit/s and left an unmarked one 0 to 16, against 370 to
-  564 each without the entry; the two together stayed at 928 to 941 Mbit/s in every run. So a class
-  for a bulk stream would starve the rest, and a minimum is what protects them. The runs,
-  photographed: [a4-2026-11-17.png](docs/images/measurements/a4-2026-11-17.png). To be measured with
-  these classes: pf's mark from a class into the switch's queue end to end, a minimum held under a
-  full port, a part from a Firewall: Shaper weight, a pipe's limit at the port.
+- **os-xgs-npu turning port 0's pause off itself** - the switch's queues were written on 2026-11-19,
+  with os-xgs-npu's switch tool, and run on the second XGS 3300 the same day; the minimums held there
+  once port 0's pause was turned off by hand ([The switch's queues](#the-switchs-queues)), and the
+  switch tool now turns it off itself while it writes weights - not yet run on an appliance. Measured
+  before them, on the second XGS 3300 on 2026-11-17, with a switch entry written for the test and
+  taken away after: EF from the coprocessor in queue 7, TCP at line rate. A stream marked EF took 922
+  to 931 Mbit/s and left an unmarked one 0 to 16, against 370 to 564 each without the entry; the two
+  together stayed at 928 to 941 Mbit/s in every run. So a class for a bulk stream would starve the
+  rest, and a minimum is what protects them. The runs, photographed:
+  [a4-2026-11-17.png](docs/images/measurements/a4-2026-11-17.png). To be measured with these classes:
+  a part from a Firewall: Shaper weight, a pipe's limit at the port.
 - **the XGS 136, and installing and removing on an appliance** - on 2026-11-17 the rules pfctl
   loads, the mark in hardware with a class's match rule, Marked now and a refusal were tried on an
   XGS 3300, with this branch's files where the installer puts them ([What is tested](#what-is-tested)).
@@ -384,8 +401,8 @@ its own `rm` of the menu file, `uninstall.sh`'s `rm -rf` of the model's director
 with it.
 
 Not tested: the XGS 136; IPv6 on an appliance; `install.sh` and `uninstall.sh` on an appliance; the
-page in a browser; and the second part - the switch's queues, a minimum, Firewall: Shaper followed - on
-any appliance.
+page in a browser; and, of the second part, what the second XGS 3300 did not measure on 2026-11-19
+([The switch's queues](#the-switchs-queues)) - os-xgs-npu turning port 0's pause off itself among it.
 
 ## Installation
 
