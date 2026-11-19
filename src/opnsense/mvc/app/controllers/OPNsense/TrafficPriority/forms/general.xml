@@ -7,12 +7,12 @@
         <id>trafficpriority.general.enabled</id>
         <label>Enabled</label>
         <type>checkbox</type>
-        <help>Mark connections of classes switched on with their DSCP, and - on an XGS appliance whose switch os-xgs-npu sets - give the first two DSCPs their own switch queue. Off, their rules are gone at the next filter reload and connections opened after it are not marked, and Apply puts the switch back as it found it; classes stay. Apply puts a change into the firewall and the switch.</help>
+        <help>Mark connections of classes switched on with their DSCP, and - on an XGS 3300 whose switch os-xgs-npu sets - give the first two DSCPs their own switch queue, taking those DSCPs off every other connection opening with them, since the switch queues every frame of a DSCP. Off, their rules are gone at the next filter reload and connections opened after it are not marked, and Apply puts the switch back as it found it; classes stay. Apply puts a change into the firewall and the switch.</help>
     </field>
     <field>
         <id>trafficpriority.general.follow_shaper</id>
         <label>Follow Firewall: Shaper</label>
         <type>checkbox</type>
-        <help>On an XGS appliance whose switch os-xgs-npu sets: what the switch can do of Firewall: Shaper's rules, done in its queues too - a queue's weight as a part of every port for a DSCP a class here marks and has a queue for, and a pipe's bandwidth as a front port's egress limit where a rule sends everything leaving that port into it. Firewall: Shaper is read, never written, and still shapes on the host. The Firewall: Shaper tab says for each rule what the switch takes and what stays with the host.</help>
+        <help>On an XGS 3300 whose switch os-xgs-npu sets: what the switch can do of Firewall: Shaper's rules, done in its queues too - a queue's weight as a part of every port for a DSCP a class here marks and has a queue for, where the queue and its pipe have no mask and the pipe's scheduler shares by weight; and a pipe's bandwidth as a front port's egress limit, in the switch's steps, where a rule sends everything leaving that port into it and no rule before it on that interface takes part of it first. Firewall: Shaper is read, never written, and still shapes on the host. The Firewall: Shaper tab says for each rule what the switch takes and what stays with the host.</help>
     </field>
 </form>

@@ -115,9 +115,18 @@
             'no-project': "{{ lang._('no switch here: pf alone marks') }}",
             'no-tool': "{{ lang._('this os-xgs-npu sets no switch queue yet: update it') }}",
             'read-only': "{{ lang._('not applied on this model yet: os-xgs-npu only reads its switch') }}",
+            'untested-model': "{{ lang._('not applied on this model yet: measured on the XGS 3300 alone') }}",
             'no-switch': "{{ lang._('no switch os-xgs-npu knows on this model') }}",
             'follow-off': "{{ lang._('Follow Firewall: Shaper is off (General)') }}",
             'unknown': "{{ lang._('not known') }}"
+        };
+
+        /* Why Apply gave the switch nothing (hardware.py's plan, apply.py): the same words as the model's
+           refusals at the save, where they are the same thing. */
+        const refusals = {
+            'mix': "{{ lang._('A minimum cannot be kept beside a strict class: give each class with a switch queue a minimum, or none.') }}",
+            'over': "{{ lang._('The minimums of the classes switched on would add up to more than 100 percent.') }}",
+            'rules': "{{ lang._('pf refused the rule set of the last filter reload: the switch is left as it is.') }}"
         };
 
         /* A class's place in the switch (hardware.py's plan). */
@@ -137,8 +146,17 @@
                 case 'third':
                     text = '<span class="text-warning">' + "{{ lang._('pf only: the switch takes two DSCPs, and two come before it') }}" + '</span>';
                     break;
+                case 'no-place':
+                    text = '<span class="text-warning">' + "{{ lang._('no queue at the last filter reload: Apply puts it in') }}" + '</span>';
+                    break;
+                case 'rule':
+                    text = '<span class="text-muted">' + "{{ lang._('no queue: pf was given no rule for it') }}" + '</span>';
+                    break;
                 case 'best-effort':
                     text = "{{ lang._('queue 0, with everything else') }}";
+                    break;
+                case 'below-default':
+                    text = "{{ lang._('queue 0: a DSCP below Best Effort takes no queue of its own') }}";
                     break;
                 case 'ipv6':
                     text = "{{ lang._('queue 0: the switch picks out IPv4 alone') }}";
@@ -151,8 +169,6 @@
             }
             if (sw.minimum_why === 'not-hardware') {
                 text += ' · <span class="text-warning">' + "{{ lang._('its minimum is not held: no queue of its own') }}" + '</span>';
-            } else if (sw.minimum_why === 'over') {
-                text += ' · <span class="text-warning">' + "{{ lang._('its minimum is not held: the minimums add up to more than 100 percent') }}" + '</span>';
             }
             return text;
         }
@@ -177,7 +193,12 @@
             'one-queue': "{{ lang._('the only queue of its pipe: its weight shares nothing') }}",
             'minimum-wins': "{{ lang._('a class\'s own minimum for DSCP %s is held instead') }}",
             'share-taken': "{{ lang._('an earlier rule gave DSCP %s its part: %s') }}",
-            'share-over': "{{ lang._('its part, %s percent, would take the parts past 100 percent') }}"
+            'share-over': "{{ lang._('its part, %s percent, would take the parts past 100 percent') }}",
+            'beside-strict': "{{ lang._('its part is not kept: the other switch queue would be strict and go first') }}",
+            'queue-mask': "{{ lang._('a weight for each address, by its queue\'s mask: the switch shares a port among its queues') }}",
+            'scheduler': "{{ lang._('its pipe\'s scheduler, %s, does not share by weight') }}",
+            'earlier-rule': "{{ lang._('an earlier rule on this interface takes part of its traffic first: %s') }}",
+            'refused': "{{ lang._('nothing given to the switch:') }}"
         };
 
         function shaperHardware(row) {
@@ -186,7 +207,8 @@
             }
             return row.hardware.map(function (item) {
                 if (item.what === 'limit') {
-                    return fill("{{ lang._('%s: egress limit %s') }}", item.port, rate(item.kbit));
+                    return fill("{{ lang._('%s: egress limit %s') }}", item.port, rate(item.kbit)) +
+                        (item.asked !== item.kbit ? ' ' + fill("{{ lang._('(the switch\'s step below the pipe\'s %s)') }}", rate(item.asked)) : '');
                 }
                 if (item.what === 'share') {
                     return fill("{{ lang._('DSCP %s: %s percent of every port at least, queue %s') }}", item.dscp, item.percent, item.queue);
@@ -203,8 +225,14 @@
                 const text = switchNot[item.why] || shaperHost[item.why] || item.why;
                 switch (item.why) {
                     case 'port-taken':
+                    case 'earlier-rule':
+                        return fill(text, item.by);
                     case 'share-taken':
-                        return item.why === 'port-taken' ? fill(text, item.by) : fill(text, item.dscp, item.by);
+                        return fill(text, item.dscp, item.by);
+                    case 'scheduler':
+                        return fill(text, item.scheduler);
+                    case 'refused':
+                        return text + ' ' + (refusals[item.refused] || item.refused);
                     case 'class-limit':
                         return fill(text, rate(item.kbit));
                     case 'unmarked':
@@ -251,18 +279,30 @@
                     data.refused ? "{{ lang._('last rule set refused by pf') }}" : "{{ lang._('classes with rules loaded') }}"));
             $cards.append(card('', 'fa-link', "{{ lang._('Marked now') }}", count(data.marked),
                 "{{ lang._('connections with a mark set coming in, each once') }}"));
+            /* the last Apply's outcome first, whatever else is said: a set or a put-back that failed, a
+               refusal, a run still going - then why nothing is set, the switch read again, a change since */
             const hw = data.hardware || {};
             const last = hw.last || {};
-            if (hw.why_not) {
-                $cards.append(card('', 'fa-sitemap', "{{ lang._('Switch queues') }}", "{{ lang._('none set') }}",
-                    plain(switchNot[hw.why_not] || hw.why_not)));
+            const queues = "{{ lang._('Switch queues') }}";
+            const changed = hw.check && hw.check.ok === false;
+            if (last.status === 'running') {
+                $cards.append(card('', 'fa-sitemap', queues, "{{ lang._('being set') }}",
+                    "{{ lang._('Apply is setting the switch') }}" + ' ' + (last.time || '')));
+                clearTimeout(window.tpAgain);
+                window.tpAgain = setTimeout(refresh, 3000);
+            } else if (last.status === 'failed' || last.status === 'refused') {
+                $cards.append(card('bad', 'fa-sitemap', queues, "{{ lang._('not set') }}",
+                    "{{ lang._('last Apply:') }}" + ' ' + plain(refusals[last.said] || refusals[last.refused] || last.said || '')));
+            } else if (hw.why_not) {
+                $cards.append(card('', 'fa-sitemap', queues, "{{ lang._('none set') }}", plain(switchNot[hw.why_not] || hw.why_not)));
+            } else if (changed) {
+                $cards.append(card('bad', 'fa-sitemap', queues, "{{ lang._('changed') }}",
+                    "{{ lang._('the switch no longer holds what Apply set: Apply again') }}" + ' (' +
+                    ((hw.check.changed || []).join(', ') || hw.check.error || '') + ')'));
             } else {
-                const failed = last.status === 'failed' || last.status === 'refused';
-                $cards.append(card(failed ? 'bad' : (hw.pending ? 'warn' : (last.status === 'applied' ? 'ok' : '')),
-                    'fa-sitemap', "{{ lang._('Switch queues') }}",
+                $cards.append(card(hw.pending ? 'warn' : (last.status === 'applied' ? 'ok' : ''), 'fa-sitemap', queues,
                     fill("{{ lang._('%s of 2') }}", (hw.dscps || []).length),
-                    failed ? "{{ lang._('last Apply not set:') }}" + ' ' + (last.said || '') :
-                        hw.pending ? "{{ lang._('changed since the last Apply') }}" :
+                    hw.pending ? "{{ lang._('changed since the last Apply') }}" :
                         last.time ? "{{ lang._('set by Apply') }}" + ' ' + last.time : "{{ lang._('DSCPs with a queue of their own') }}"));
             }
             $('#tp-refused').toggle(!!data.refused);
@@ -456,7 +496,7 @@
             {{ lang._('os-xgs-npu is installed: it puts a marked IPv4 connection into hardware with its DSCP - measured with these rules on an XGS 3300 - and keeps a marked IPv6 connection with the host. A connection in hardware adds no more packets or bytes here.') }}
         </div>
         <div class="text-muted" style="padding: 0 15px 15px;">
-            {{ lang._('Switch queue: on an XGS 3300 family appliance, every frame the coprocessor sends into its switch waits in queue 0, marked or not; os-xgs-npu picks out two DSCPs there and gives each a queue of its own, on every front port behind the switch at once - the first two in this list\'s order, IPv4. A class without a minimum is strict: it goes before everything else, and can take a whole port. One with a minimum is weighted: it keeps at least that part of a full port, and the rest keeps what is left. The front ports on the coprocessor\'s own MACs - F1 and F2 of the XGS 3300 - are not behind the switch. Measured on an XGS 3300: EF picked out into queue 7; not yet with these classes, nor a minimum held.') }}
+            {{ lang._('Switch queue: on an XGS 3300, every frame the coprocessor sends into its switch waits in queue 0, marked or not; os-xgs-npu picks out two DSCPs there and gives each a queue of its own, on every front port behind the switch at once - the first two in this list\'s order of the classes that make a rule, IPv4, above Best Effort. The switch picks out every frame with the DSCP, whoever marked it, so a DSCP the classes use in the switch is taken off other traffic: pf sets it to 0 on every other connection opening with it, before the classes mark theirs. A connection that opens without it and whose replies carry it keeps it on the way back - pf fixes a mark when a connection opens. Classes without a minimum are strict: they go before everything else, and can take a whole port. With minimums they are weighted: each keeps at least its part of a full port, and the rest keeps what is left; strict and weighted are not mixed. The front ports on the coprocessor\'s own MACs - F1 and F2 - are not behind the switch. Measured on an XGS 3300: EF picked out into queue 7; not yet with these classes, nor a minimum held.') }}
         </div>
         <div id="tp-pf-alone" class="text-muted" style="display: none; padding: 0 15px 15px;">
             {{ lang._('pf alone marks connections here: without os-xgs-npu no hardware carries them.') }}
