@@ -45,8 +45,10 @@ sequence that does). Queues 1 to 6, which no place uses, get one turn each: the 
 mark themselves with DSCP 8 to 55 wait in them on the switch's way into the coprocessor (port 0), each
 queue its single turn in about a hundred when that link is full. Whether the switch counts a turn in
 frames or in bytes is not in UMSD's source and not measured: a class of small packets beside one of
-large ones may get less of the port's bits than its share. Not measured: a sequence written; the XGS
-3300 read only its length, 99.
+large ones may get less of the port's bits than its share. A sequence of 105 turns was written and
+read back on the second XGS 3300 (2026-11-19), and its parts held only with port 0's pause off: 30
+against 20 turns shared a full port 59 to 41 then, 98 to 2 with it on. os-xgs-npu's switch tool turns
+the pause off whenever it writes a sequence, and puts it back when the sequence goes.
 """
 
 import re

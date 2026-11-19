@@ -184,8 +184,8 @@ def switch(config, model, result, rules=None, check=None):
     file of the last filter reload), what the last Apply did (its result file) - shown whatever else is
     said: a put-back or a set that failed, a refusal, a run still going - and whether the two differ,
     pending. model is what os-xgs-npu's switch tool says of this appliance (apply.can()), None without
-    it. check, when given, is the switch tool's "check": whether entries 3 and 255 and port 0's TCAM mode
-    still hold what Apply set - the coprocessor's network agent shares the TCAM's engine."""
+    it. check, when given, is the switch tool's "check": whether entries 3 and 255, port 0's TCAM mode and
+    its pause still hold what Apply set - the coprocessor's network agent shares the TCAM's engine."""
     decided = apply.decide(ET.parse(config or CONFIG).getroot(), model, apply.rules_text(rules))
     try:
         with open(result or apply.RESULT, encoding='utf-8') as handle:
