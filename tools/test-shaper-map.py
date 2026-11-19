@@ -95,16 +95,36 @@ def rule(uuid, target, sequence='1', interface='wan', direction='out', proto='ip
     return r
 
 
+def uuid(name):
+    return '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a%02d' % int(name[1:])
+
+
 def voice(minimum='', dscp='46', uuid='c1', sequence='100'):
-    c = {'uuid': uuid, 'enabled': '1', 'sequence': sequence, 'description': 'Voice', 'dscp': dscp,
+    c = {'uuid': globals()['uuid'](uuid), 'enabled': '1', 'sequence': sequence, 'description': 'Voice', 'dscp': dscp,
          'ipprotocol': 'inet'}
     if minimum:
         c['minimum'] = minimum
     return c
 
 
+def rules(classes):
+    """The rules file the hook writes for these classes (tools/test-rules.php holds the hook to it): a
+    rule taking each place's DSCP off other traffic - the first two DSCPs above Best Effort, by sequence -
+    then the classes' own."""
+    places = []
+    for c in sorted(classes, key=lambda c: int(c['sequence'])):
+        d = int(c['dscp'])
+        if d not in (0, 1, 8) and d not in places and len(places) < 2:
+            places.append(d)
+    return ''.join('match in inet from {any} to {any} tos 0x%02x scrub ( set-tos 0x00 ) label '
+                   '"trafficpriority-clear-%d"\n' % (d << 2, d) for d in places) + \
+        ''.join('match in on igb1 inet scrub ( set-tos 0x%02x ) label "trafficpriority-%s"\n' % (int(c['dscp']) << 2,
+                                                                                                c['uuid'])
+                for c in classes)
+
+
 def decide(model=XGS3300, **kw):
-    return apply.decide(config(**kw), model)
+    return apply.decide(config(**kw), model, rules(kw.get('classes', ())))
 
 
 def rows(decided):
@@ -119,8 +139,8 @@ def why(row):
 d = decide(classes=[voice()], pipes=[pipe('p100', 100)], rules=[rule('all-out', 'p100')])
 r = rows(d)['all-out']
 check('a rule sending everything leaving WAN (Port2) into a 100 Mbit/s pipe: Port2\'s egress limit',
-      (r['hardware'], r['host'], d['conf']['limits']), ([{'what': 'limit', 'port': 'Port2', 'kbit': 100000}], [],
-                                                       {'Port2': 100000}))
+      (r['hardware'], r['host'], d['conf']['limits']), ([{'what': 'limit', 'port': 'Port2', 'asked': 100000,
+                                                          'kbit': 100000}], [], {'Port2': 100000}))
 check('the settings for the switch tool: the class, the scheduling, the limit; no weights',
       d['conf'], {'owner': 'os-trafficpriority', 'classes': [{'dscp': 46, 'mask': 63, 'queue': 7}],
                   'scheduling': {'*': 1}, 'limits': {'Port2': 100000}})
@@ -143,9 +163,9 @@ check('a pipe below the switch\'s smallest step, 64 kbit/s: stays',
       why(rows(decide(pipes=[pipe('p', 32, 'Kbit')], rules=[rule('r', 'p')]))['r']), ['rate'])
 d = decide(pipes=[pipe('p100', 100), pipe('p50', 50)], rules=[rule('second', 'p50', sequence='20'),
                                                                 rule('first', 'p100', sequence='10')])
-check('two rules on one port: the first by sequence limits it, the other stays',
+check('two rules on one port: the first by sequence limits it; ipfw stops there, the other sees nothing',
       (d['conf']['limits'], [h for h in rows(d)['second']['host']]),
-      ({'Port2': 100000}, [{'why': 'port-taken', 'port': 'Port2', 'by': 'first'}]))
+      ({'Port2': 100000}, [{'why': 'earlier-rule', 'by': 'first'}]))
 check('the rules in their sequence\'s order', [r['uuid'] for r in d['shaper']], ['first', 'second'])
 r = rows(decide(pipes=[pipe('p', 100)], rules=[rule('r', 'p', source='192.0.2.0/24')]))['r']
 check('a rule for some addresses into a pipe, no DSCP: the switch cannot tell them; the limit is the class\'s',
@@ -170,18 +190,20 @@ check('...its pipe\'s 100 Mbit/s for EF alone stays with the host', r['host'], [
 check('...the settings: all weighted, 70 turns for queue 7, 30 for the rest',
       (d['conf']['scheduling'], d['conf']['weights'].count(7), d['conf']['weights'].count(0), 'limits' in d['conf']),
       ({'*': 0}, 70, 30, True))
-check('...the catch-all rule into the other queue: everything leaving WAN through the pipe - Port2 limited',
-      (rows(d)['rest']['hardware'], d['conf']['limits']), ([{'what': 'limit', 'port': 'Port2', 'kbit': 100000}],
-                                                           {'Port2': 100000}))
+check('...the catch-all rule into the other queue of the same pipe: everything leaving WAN through the pipe - '
+      'Port2 limited', (rows(d)['rest']['hardware'], d['conf']['limits']),
+      ([{'what': 'limit', 'port': 'Port2', 'asked': 100000, 'kbit': 100000}], {'Port2': 100000}))
 d = decide(classes=[voice(minimum='20')], rules=[rule('ef', 'qv', dscp='ef')], **shaper)
 check('a class\'s own minimum before the rule\'s part', ([h['what'] for h in rows(d)['ef']['hardware']],
                                                          why(rows(d)['ef'])[0], d['conf']['weights'].count(7)),
       (['queue'], 'minimum-wins', 20))
-d = decide(classes=[voice(), voice(uuid='c2', dscp='34', minimum='50')],
-           rules=[rule('ef', 'qv', dscp='ef')], **shaper)
-check('a part that would take the parts past 100 (50 + 70): stays, EF strict',
-      ([h['what'] for h in rows(d)['ef']['hardware']], 'share-over' in why(rows(d)['ef']), d['plan']['dscps'][0]['kind']),
-      (['queue'], True, 'strict'))
+two = dict(pipes=[pipe('p', 100), pipe('p2', 100)],
+           queues=[queue('qv', 'p', 70), queue('qb', 'p', 30), queue('qa', 'p2', 50), queue('qc', 'p2', 50)])
+d = decide(classes=[voice(), voice(uuid='c2', dscp='34')],
+           rules=[rule('ef', 'qv', dscp='ef'), rule('af', 'qa', dscp='af41', sequence='2')], **two)
+check('parts that would add up past 100 (70 + 50): neither kept, both strict',
+      ([h['what'] for h in rows(d)['ef']['hardware']], 'share-over' in why(rows(d)['ef']),
+       [x['kind'] for x in d['plan']['dscps']]), (['queue'], True, ['strict', 'strict']))
 d = decide(classes=[voice()], rules=[rule('a', 'qv', dscp='ef', sequence='1'), rule('b', 'qb', dscp='ef', sequence='2')],
            **shaper)
 check('two rules giving EF a part: the first\'s taken', (rows(d)['b']['host'][0], d['conf']['weights'].count(7)),
@@ -208,6 +230,49 @@ check('Best Effort: queue 0 already', why(rows(decide(classes=[voice()], rules=[
                                                       **shaper))['r']), ['best-effort'])
 check('a DSCP name not known', why(rows(decide(classes=[voice()], rules=[rule('r', 'qv', dscp='xx')], **shaper))['r']),
       ['dscp-name'])
+# ---- a share only where the weights share as the switch would: no mask, a scheduler by weight ----
+masked = dict(pipes=[pipe('p', 100)], queues=[dict(queue('qv', 'p', 70), mask='src-ip'), queue('qb', 'p', 30)])
+r = rows(decide(classes=[voice()], rules=[rule('ef', 'qv', dscp='ef')], **masked))['ef']
+check('a queue with a mask - a weight for each address: its part stays with the host',
+      ([h['what'] for h in r['hardware']], [h['why'] for h in r['host']]), (['queue'], ['queue-mask', 'class-limit']))
+for sched, name in (('fq_codel', 'FlowQueue-CoDel'), ('fifo', 'FIFO'), ('fq_pie', 'FlowQueue-PIE')):
+    sch = dict(pipes=[dict(pipe('p', 100), scheduler=sched)], queues=[queue('qv', 'p', 70), queue('qb', 'p', 30)])
+    r = rows(decide(classes=[voice()], rules=[rule('ef', 'qv', dscp='ef')], **sch))['ef']
+    check('a pipe scheduled by %s: no part by weight' % name, r['host'][0], {'why': 'scheduler', 'scheduler': name})
+for sched in ('', 'rr', 'qfq'):
+    sch = dict(pipes=[dict(pipe('p', 100), scheduler=sched)], queues=[queue('qv', 'p', 70), queue('qb', 'p', 30)])
+    d = decide(classes=[voice()], rules=[rule('ef', 'qv', dscp='ef')], **sch)
+    check('a pipe scheduled by %s - by weight: the part taken' % (sched or 'WF2Q+'), d['conf']['weights'].count(7), 70)
+r = rows(decide(classes=[voice()], rules=[rule('ef', 'qv', dscp='ef', interface='opt1')], **shaper))['ef']
+check('a DSCP rule on F1, outside the switch: nothing in the switch', (r['hardware'], why(r)), ([], ['not-switch-port']))
+
+# ---- one_pass: an earlier rule on the interface takes its traffic first ----
+d = decide(pipes=[pipe('p100', 100), pipe('p5', 5)],
+           rules=[rule('voip', 'p5', sequence='1', dst_port='5060', proto='udp'), rule('all', 'p100', sequence='2')])
+check('a rule after another on the same interface and way: not all that leaves the port',
+      (d['conf'], rows(d)['all']['host']), (None, [{'why': 'earlier-rule', 'by': 'voip'}]))
+d = decide(pipes=[pipe('p100', 100), pipe('p5', 5)],
+           rules=[rule('lan', 'p5', sequence='1', interface='lan'), rule('in', 'p5', sequence='2', direction='in'),
+                  rule('all', 'p100', sequence='3')])
+check('an earlier rule on another interface, or the way in: the port still limited', d['conf']['limits'],
+      {'Port1': 5000, 'Port2': 100000})
+
+# ---- the step the switch writes ----
+r = rows(decide(pipes=[pipe('p', 155)], rules=[rule('r', 'p')]))['r']
+check('a pipe of 155 Mbit/s: 150 at the port, the switch\'s step, the pipe\'s said beside it',
+      r['hardware'], [{'what': 'limit', 'port': 'Port2', 'asked': 155000, 'kbit': 150000}])
+check('the steps as UMSD gives them', [shaper_map.step(k) for k in (100000, 155000, 905000, 1500, 640, 63, 10000001)],
+      [100000, 150000, 900000, 1000, 639, None, None])
+
+# ---- the plan refused: nothing in the switch, said on every rule it concerned ----
+d = decide(classes=[voice(), voice(uuid='c2', dscp='34', minimum='30')], rules=[rule('ef', 'qv', dscp='ef')], **shaper)
+check('a minimum beside a strict class: nothing for the switch, the rule says so',
+      (d['refused'], d['conf'], rows(d)['ef']['hardware'], rows(d)['ef']['host'][-1]),
+      ('mix', None, [], {'why': 'refused', 'refused': 'mix'}))
+d = decide(classes=[voice(), voice(uuid='c2', dscp='34')], rules=[rule('ef', 'qv', dscp='ef')], **shaper)
+check('a part for one place of two strict: not kept, said', ('beside-strict' in why(rows(d)['ef']),
+                                                            d['conf']['scheduling']), (True, {'*': 2}))
+
 check('a share: the queue\'s weight against the others of its pipe switched on',
       shaper_map.share({'queues': {'a': queue('a', 'p', 70), 'b': queue('b', 'p', 30), 'c': queue('c', 'p', 900, '0'),
                                    'd': queue('d', 'other', 10)}}, queue('a', 'p', 70)), 70)

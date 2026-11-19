@@ -5,15 +5,22 @@
 #
 """
 Which classes go to the switch's queues on an XGS appliance, which queue each takes, how the queues are
-scheduled and with what weights - from the classes in config.xml, their minimums, and the shares
-shaper_map.py takes from Firewall: Shaper. Read only: apply.py writes what this decides into
-os-xgs-npu's settings file for the switch (switch_qos.py), and status.py shows it.
+scheduled and with what weights - from the classes in config.xml, their minimums, the shares
+shaper_map.py takes from Firewall: Shaper, and the places the last filter reload gave pf. Read only:
+apply.py writes what this decides into os-xgs-npu's settings file for the switch (switch_qos.py), and
+status.py shows it.
+
+THE PLACES ARE THE RULES FILE'S. The rules hook decides at every filter reload which DSCPs have a
+place in the switch (OPNsense\\TrafficPriority\\Hardware): at most two, those of the classes switched
+on that make a rule, in the page's order, IPv4, above Best Effort - and it writes, for each, the rule
+that takes that DSCP off every other connection, labelled "trafficpriority-clear-<DSCP>". Those rules
+are what this reads (from_rules()): the switch is given a DSCP only when pf was given the rule that
+leaves it to the classes' connections alone - the switch queues every frame carrying it, whoever marked
+it. A class whose own rules the file does not hold has no place either.
 
 WHAT THE SWITCH CAN DO, measured by os-xgs-npu on the second XGS 3300 (2026-11-11, 2026-11-17):
   - a frame the coprocessor sends into the switch waits in queue 0 whatever its DSCP, unless a TCAM
-    entry on the switch's port 0 picks it out by its DSCP and sets its queue. Two entries are free,
-    so two DSCPs at most go to a queue of their own; the classes marking any other DSCP are marked
-    by pf and nothing more;
+    entry on the switch's port 0 picks it out by its DSCP and sets its queue;
   - one entry serves every front port behind the switch at once: the queue is set where the frame
     enters the switch, and each front port then serves its queues as its scheduling says;
   - the scheduling is per port - strict for the top 1 to 6 queues and weighted for the rest, or all
@@ -21,23 +28,24 @@ WHAT THE SWITCH CAN DO, measured by os-xgs-npu on the second XGS 3300 (2026-11-1
     proportion for every port in weighted mode, the coprocessor's own uplink among them;
   - the key is IPv4's: an IPv6 class's frames stay in queue 0.
 
-HOW THE CLASSES BECOME QUEUES. The classes switched on, in the order the page shows them (by
-sequence, then as listed): each DSCP other than Best Effort (0), on a class that marks IPv4, takes the
-next of the two hardware places until both are taken; classes marking a DSCP that has a place share
-it. A DSCP whose classes have no minimum, and no share from Firewall: Shaper, is STRICT: it goes
-first, before every other queue. One with a minimum, or a share, is WEIGHTED: under full load its
-queue gets at least that part of a port, everything else (queue 0) the rest. Strict queues take the
-top places, 7 then 6, the weighted ones the places below them; the ports' scheduling is the number of
-strict queues (UMSD's mode 1 or 2), or 0 - all weighted - with none. A strict queue can take a whole
-port: phase 0 measured a bulk stream marked EF taking 912 to 984 Mbit/s and leaving an unmarked one 0
-to 31, and a weighted queue is what guarantees the rest a part.
+STRICT, OR MINIMUMS - NOT BOTH. With no minimum, a place's DSCP is strict: it goes first, before every
+other queue, top queues first (7, then 6), and can take a whole port - phase 0 measured a bulk stream
+marked EF taking 912 to 984 Mbit/s and leaving an unmarked one 0 to 31. With minimums, the places'
+queues are weighted: under full load each keeps at least its part of a port, and the rest of the
+traffic (queue 0) keeps what is left. A strict queue beside a weighted one would go before it and leave
+it no minimum, so the two are not mixed: every class with a place has a minimum, or none has - else
+nothing is given to the switch, and Apply says why. The minimums add up to 100 at most. Firewall:
+Shaper's parts make the places weighted only where no class has a minimum, every place has one, and
+they fit in 100.
 
 THE WEIGHTS. A sequence of turns, each queue as many as its share in percent - queue 0 the part
 left - and every queue at least one, so that no port ever shuts one out (os-xgs-npu refuses a
-sequence that does). Whether the switch counts a turn in frames or in bytes is not in UMSD's source and
-not measured: a class of small packets beside one of large ones may get less of the port's bits than
-its share. Measured: UMSD's own default, 33, 25, 17, 12, 6, 3, 2, 1 for queues 7 to 0, read on the
-XGS 3300; not yet a sequence written.
+sequence that does). Queues 1 to 6, which no place uses, get one turn each: the frames the clients
+mark themselves with DSCP 8 to 55 wait in them on the switch's way into the coprocessor (port 0), each
+queue its single turn in about a hundred when that link is full. Whether the switch counts a turn in
+frames or in bytes is not in UMSD's source and not measured: a class of small packets beside one of
+large ones may get less of the port's bits than its share. Not measured: a sequence written; the XGS
+3300 read only its length, 99.
 """
 
 import re
@@ -46,6 +54,9 @@ import xml.etree.ElementTree as ET
 ENTRIES = 2                 # TCAM entries 3 and 255: the switch tool's two places
 NO_SEQUENCE = 100000        # Marking::NO_SEQUENCE: a class whose sequence cannot be read goes first
 MAX_TURNS = 128             # the chip's weight table
+BELOW = {0: 'best-effort', 1: 'below-default', 8: 'below-default'}     # Hardware::BELOW
+CLEAR = re.compile(r'label "trafficpriority-clear-([0-9]{1,2})"')
+LABELED = re.compile(r'label "trafficpriority-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"')
 
 
 def dscp(value):
@@ -99,88 +110,96 @@ def ordered(classes):
     return [c for _, c in on]
 
 
-def places(classes):
-    """The DSCPs that go to the switch, in order, at most two, and why each class does or does not:
-    ([dscp, ...], {uuid: 'hardware' | 'third' | 'best-effort' | 'ipv6' | 'dscp' | 'off'})."""
-    taken, why = [], {}
-    for c in classes:
-        if not switched_on(c):
-            why[c['uuid']] = 'off'
-    for c in ordered(classes):
-        d = dscp(c.get('dscp'))
-        if d is None:
-            why[c['uuid']] = 'dscp'
-        elif d == 0:
-            why[c['uuid']] = 'best-effort'
-        elif (c.get('ipprotocol') or 'inet') == 'inet6':
-            why[c['uuid']] = 'ipv6'
-        elif d in taken:
-            why[c['uuid']] = 'hardware'
-        elif len(taken) < ENTRIES:
-            taken.append(d)
-            why[c['uuid']] = 'hardware'
-        else:
-            why[c['uuid']] = 'third'
-    return taken, why
+def from_rules(text):
+    """What the last filter reload gave pf, from its rules file: (the places' DSCPs in their order, the
+    UUIDs of the classes it wrote a rule for). A rule written commented out - OPNsense could not place
+    it - counts for neither."""
+    places, written = [], set()
+    for line in (text or '').splitlines():
+        if line.lstrip().startswith('#'):
+            continue
+        found = CLEAR.search(line)
+        if found and int(found.group(1)) not in places:
+            places.append(int(found.group(1)))
+        found = LABELED.search(line)
+        if found:
+            written.add(found.group(1))
+    return places, written
 
 
-def plan(classes, shares=None):
+def plan(classes, places, written, shares=None):
     """What the switch is given for the classes: {'dscps': [{'dscp', 'queue', 'kind' ('strict' or
     'weighted'), 'percent', 'from' ('minimum', 'shaper' or None), 'classes': [uuid, ...]}],
     'classes': {uuid: {'why', 'dscp', 'queue', 'kind', 'percent', 'minimum': the class's own or None,
-    'minimum_why': '' | 'not-hardware' | 'over'}}, 'mode': 0-7 or None, 'weights': [...] or None,
-    'percent': {queue: percent}}. shares: {dscp: percent} from Firewall: Shaper, for a DSCP whose
-    classes give no minimum of their own."""
+    'minimum_why': '' | 'not-hardware'}}, 'mode': 0-7 or None, 'weights': [...] or None,
+    'percent': {queue: percent}, 'refused': '' | 'mix' | 'over', 'shares_why': '' | 'minimum-wins' |
+    'beside-strict' | 'share-over'}. places and written: from_rules(). shares: {dscp: percent} from
+    Firewall: Shaper. With 'refused', nothing is for the switch."""
     shares = shares or {}
-    taken, why = places(classes)
-    rows = {c['uuid']: {'why': why.get(c['uuid'], 'off'), 'dscp': dscp(c.get('dscp')), 'queue': None,
-                        'kind': None, 'percent': None, 'minimum': minimum_of(c.get('minimum')), 'minimum_why': ''}
-            for c in classes}
-    # the minimums, in the page's order, while they fit in a port
-    total = 0
-    percent = {d: 0 for d in taken}
-    source = {d: None for d in taken}
-    for c in ordered(classes):
-        row = rows[c['uuid']]
-        if row['minimum'] is None:
-            continue
-        if row['why'] != 'hardware':
-            row['minimum_why'] = 'not-hardware'
-            continue
-        if total + row['minimum'] > 100:
-            row['minimum_why'] = 'over'
-            continue
-        total += row['minimum']
-        percent[row['dscp']] += row['minimum']
-        source[row['dscp']] = 'minimum'
-    # Firewall: Shaper's shares, for a DSCP without a minimum of its own, while they fit too
-    for d in taken:
-        if source[d] is None and d in shares and total + shares[d] <= 100:
-            total += shares[d]
-            percent[d] = shares[d]
-            source[d] = 'shaper'
-    strict = [d for d in taken if source[d] is None]
-    weighted = [d for d in taken if source[d] is not None]
-    queue = {}
-    q = 7
-    for d in strict + weighted:
-        queue[d] = q
-        q -= 1
-    dscps = []
-    for d in taken:
-        dscps.append({'dscp': d, 'queue': queue[d], 'kind': 'strict' if source[d] is None else 'weighted',
-                      'percent': percent[d] if source[d] else None, 'from': source[d],
-                      'classes': [c['uuid'] for c in ordered(classes) if rows[c['uuid']]['why'] == 'hardware'
-                                  and rows[c['uuid']]['dscp'] == d]})
+    rows = {}
     for c in classes:
+        d = dscp(c.get('dscp'))
+        if not switched_on(c):
+            why = 'off'
+        elif c['uuid'] not in written:
+            why = 'rule'
+        elif d is None:
+            why = 'dscp'
+        elif d in BELOW:
+            why = BELOW[d]
+        elif (c.get('ipprotocol') or 'inet') == 'inet6':
+            why = 'ipv6'
+        elif d in places:
+            why = 'hardware'
+        else:
+            why = 'third' if len(places) >= ENTRIES else 'no-place'
+        minimum = minimum_of(c.get('minimum'))
+        rows[c['uuid']] = {'why': why, 'dscp': d, 'queue': None, 'kind': None, 'percent': None,
+                           'minimum': minimum,
+                           'minimum_why': 'not-hardware' if minimum is not None and why not in ('hardware', 'off') else ''}
+    held = [c for c in ordered(classes) if rows[c['uuid']]['why'] == 'hardware']
+    taken = [d for d in places if any(rows[c['uuid']]['dscp'] == d for c in held)]
+    out = {'dscps': [], 'classes': rows, 'mode': None, 'weights': None, 'percent': {}, 'refused': '',
+           'shares_why': ''}
+    with_minimum = [c for c in held if rows[c['uuid']]['minimum'] is not None]
+    if with_minimum and len(with_minimum) < len(held):
+        out['refused'] = 'mix'
+    elif sum(rows[c['uuid']]['minimum'] for c in with_minimum) > 100:
+        out['refused'] = 'over'
+    percent, source = {d: 0 for d in taken}, {d: None for d in taken}
+    if not out['refused']:
+        if with_minimum:
+            for c in with_minimum:
+                percent[rows[c['uuid']]['dscp']] += rows[c['uuid']]['minimum']
+                source[rows[c['uuid']]['dscp']] = 'minimum'
+            if shares:
+                out['shares_why'] = 'minimum-wins'
+        elif shares:
+            mine = {d: shares[d] for d in taken if d in shares}
+            if len(mine) < len(taken):
+                out['shares_why'] = 'beside-strict'
+            elif sum(mine.values()) > 100:
+                out['shares_why'] = 'share-over'
+            else:
+                for d, p in mine.items():
+                    percent[d], source[d] = p, 'shaper'
+    weighted = bool(taken) and all(source[d] for d in taken)
+    queue = {d: 7 - i for i, d in enumerate(taken)}
+    for d in taken:
+        out['dscps'].append({'dscp': d, 'queue': queue[d], 'kind': 'weighted' if weighted else 'strict',
+                             'percent': percent[d] if weighted else None, 'from': source[d] if weighted else None,
+                             'classes': [c['uuid'] for c in held if rows[c['uuid']]['dscp'] == d]})
+    for c in held:
         row = rows[c['uuid']]
-        if row['why'] == 'hardware':
-            row['queue'] = queue[row['dscp']]
-            row['kind'] = 'strict' if source[row['dscp']] is None else 'weighted'
-            row['percent'] = percent[row['dscp']] if source[row['dscp']] else None
-    by_queue = {queue[d]: percent[d] for d in weighted}
-    return {'dscps': dscps, 'classes': rows, 'mode': len(strict) if taken else None,
-            'weights': turns(by_queue) if weighted else None, 'percent': by_queue}
+        row['queue'] = queue[row['dscp']]
+        row['kind'] = 'weighted' if weighted else 'strict'
+        row['percent'] = percent[row['dscp']] if weighted else None
+    if taken and not out['refused']:
+        out['mode'] = 0 if weighted else len(taken)
+        if weighted:
+            out['percent'] = {queue[d]: percent[d] for d in taken}
+            out['weights'] = turns(out['percent'])
+    return out
 
 
 def turns(percent):
