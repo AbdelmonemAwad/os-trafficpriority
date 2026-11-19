@@ -15,7 +15,7 @@
 
 # Traffic Priority for OPNsense
 
-Priority for chosen traffic - voice, games, the firewall's own management. The goal is strict priority where that traffic actually flows, in the queues of an XGS appliance's coprocessor and switch, which forwarded traffic never leaves. The first part marks the chosen connections with a DSCP, through pf; the second, on an XGS 3300 family appliance with os-xgs-npu, gives the first two DSCPs a queue of their own in the switch - strict, or weighted with a guaranteed minimum - and follows Firewall: Shaper into the switch where the switch can do what a rule does.
+Priority for chosen traffic - voice, games, the firewall's own management. The goal is strict priority where that traffic actually flows, in the queues of an XGS appliance's coprocessor and switch, which forwarded traffic never leaves. The first part marks the chosen connections with a DSCP, through pf; the second, on an XGS 3300 with os-xgs-npu, gives the first two DSCPs a queue of their own in the switch - strict, or weighted with a guaranteed minimum - taking them off other traffic, and follows Firewall: Shaper into the switch where the switch can do what a rule does.
 
 > ~~**Planned - nothing here runs yet.** This repository was opened on 2026-10-22 to hold
 > Traffic Priority as a plugin of its own. No code has been written or moved into it, and there is no
@@ -140,11 +140,12 @@ says so. The checks write every sample class out with the rule classes of both O
 
 ## The switch's queues
 
-On an XGS 3300 family appliance with os-xgs-npu, Apply gives the switch what the classes ask for,
-through os-xgs-npu's switch tool (`scripts/xgs/switch_qos.py`): `scripts/trafficpriority/apply.py`
-decides (`hardware.py`) and writes it into the tool's settings file, `/var/db/os-xgs-npu/switch-qos.json`,
-and the tool sets it, keeps what it found, and sets it again after every boot of the coprocessor,
-whose boot erases the switch's registers.
+On an XGS 3300 with os-xgs-npu, Apply gives the switch what the classes ask for, through os-xgs-npu's
+switch tool (`scripts/xgs/switch_qos.py`): `scripts/trafficpriority/apply.py` decides (`hardware.py`)
+and writes it into the tool's settings file, `/var/db/os-xgs-npu/switch-qos.json`, and the tool sets it,
+keeps what it found, and sets it again after every boot of the coprocessor, whose boot erases the
+switch's registers. Apply runs it in the background after the filter reload; the page says while it
+runs and what it did.
 
 - **why the switch needs telling** - every frame the coprocessor sends into its switch waits in queue
   0, marked or not
@@ -154,27 +155,54 @@ whose boot erases the switch's registers.
   queue 7: a stream marked EF took 922 to 931 Mbit/s against 0 to 16 for an unmarked one, the two
   together at 928 to 941 Mbit/s in every run
   ([a4-2026-11-17.png](docs/images/measurements/a4-2026-11-17.png));
-- **two DSCPs at most** - two TCAM entries are free on the XGS 3300. They go to the DSCPs of the
-  classes switched on, in the page's order (by sequence, then as listed), Best Effort and a class
-  marking IPv6 alone left out: the entry picks out IPv4. Classes of one DSCP share its queue. A class
-  of a third DSCP is marked by pf and nothing more, and the page says so;
-- **strict, or a minimum** - a DSCP whose classes give no minimum is strict: its queue goes before
-  every other, top queues first (7, then 6), and can take a whole port - the stream above did. One
-  with a minimum is weighted: under full load its queue keeps at least that part of the port, and
-  the rest of the traffic (queue 0) keeps what is left. The ports' scheduling is the number of strict
-  queues, or all weighted with none;
+- **two DSCPs at most** - two TCAM entries are free on the XGS 3300. The rules hook gives them, at
+  every filter reload, to the DSCPs of the classes switched on that make a rule, in the page's order
+  (by sequence, then as listed): IPv4 - the entry picks out IPv4 - and above Best Effort, so not Best
+  Effort, CS1 or LE. Classes of one DSCP share its queue. A class of a third DSCP is marked by pf and
+  nothing more, and the page says so;
+- **a DSCP the classes use in the switch is taken off other traffic** - the switch's entry picks out
+  every frame with the DSCP, whoever marked it: a computer marking its own traffic EF, a download
+  arriving with EF. So for each DSCP with a place the rules hook writes a rule before every class's,
+  on every interface, that sets the DSCP to 0 on every connection opening with it, both ways; the
+  classes' rules come after it and mark their own connections again - pf keeps the last match rule's
+  mark. pf fixes a connection's mark when it opens: a connection that opens without the DSCP and whose
+  replies carry it keeps it on the way back, and the switch queues those replies as the class's. That
+  rule's `label` is `trafficpriority-clear-<DSCP>`, and the switch is given exactly the DSCPs the rules
+  file has such a rule for;
+- **strict, or minimums** - classes in the switch without a minimum are strict: their queues go before
+  every other, top queues first (7, then 6), and can take a whole port - the stream above did. With
+  minimums they are weighted: under full load each queue keeps at least its part of the port, and the
+  rest of the traffic (queue 0) keeps what is left. The two are not mixed - a strict queue would go
+  before the weighted one and leave it no minimum: every class with a switch queue has a minimum, or
+  none has. The page refuses the mix at the save, and Apply gives the switch nothing while config.xml
+  holds one, and says why;
 - **one set of weights** - the switch has one weight sequence for the whole chip, so a minimum is the
   same part on every port in weighted mode, the coprocessor's own uplink among them. The sequence
-  gives each queue its percent of turns and every queue at least one turn. The minimums of the
-  classes switched on add up to 100 at most, and a minimum on a class without a queue of its own is
-  refused at the save;
-- **not measured yet** - a minimum held under a full port, entry 255 (behind the vendor's drop-all
-  254), a weight sequence written, and whether the switch counts its turns in frames or in bytes.
+  gives each queue its percent of turns and every queue at least one turn: queues 1 to 6, which no
+  class takes, get one each - frames the clients mark themselves (DSCP 8 to 55) wait in them on the
+  switch's way into the coprocessor, and when that link is full each queue gets about one turn in a
+  hundred. The minimums of the classes switched on add up to 100 at most, and a minimum on a class
+  without a queue of its own is refused at the save;
+- **the TCAM is shared** - the coprocessor's network agent loads entries through the same command
+  engine as the host, with no lock between them. So os-xgs-npu reads each entry back in the session
+  that loads it and flushes it at once if it does not read as written; reads the vendor's entries
+  beside ours before and after it writes, and does not keep a run during which they changed; and reads
+  entries 3 and 255 and port 0's mode again whenever the page asks the status - the card says so when
+  they no longer hold what Apply set;
+- **putting back** - Traffic Priority switched off, or removed, takes its settings file for the switch
+  away first, then os-xgs-npu puts back what it set, as it found it. What cannot be put back is never
+  set again: it stays in os-xgs-npu's state, put back at the next boot of the coprocessor, and the page
+  says the put-back failed;
+- **not measured yet** - pf's mark from a class into the switch's queue end to end, a minimum held
+  under a full port, entry 255 (behind the vendor's drop-all 254), a weight sequence written, the rule
+  that takes a DSCP off other traffic on the wire, and whether the switch counts its turns in frames or
+  in bytes. The XGS 3300 read the weight sequence's length (99), not the sequence.
 
 Not on the XGS 136 yet: its switch is the same chip, but its network agent shares the bus, and the
 host's reads have taken ports down there (os-xgs-npu #639, #706), so os-xgs-npu only reads it, and the
-page says the queues are not applied on this model. Nor on the front ports on the coprocessor's own
-MACs (the XGS 3300's F1 and F2): they are not behind the switch.
+page says the queues are not applied on this model. Not on the XGS 2100, 2300 and 3100 either, which
+nothing was run on: os-xgs-npu writes the XGS 3300's switch alone. Nor on the front ports on the
+coprocessor's own MACs (the XGS 3300's F1 and F2): they are not behind the switch.
 
 ## Following Firewall: Shaper
 
@@ -183,17 +211,24 @@ With **Follow Firewall: Shaper** on, Apply reads Firewall: Shaper's pipes, queue
 each rule. The Firewall: Shaper tab lists every rule with what the switch took and what stayed with the
 host:
 
-- **a queue's weight** - a rule that sends one DSCP into a queue of a pipe gives that DSCP the queue's
-  weight, against the other queues of its pipe, as a part of every port - when a class here marks the
-  DSCP and it has one of the switch's two queues, and no class of it gives a minimum of its own. The
-  parts and the minimums together add up to 100 at most;
+- **a queue's weight** - a rule on a front port behind the switch that sends one DSCP into a queue of a
+  pipe gives that DSCP the queue's weight, against the other queues of its pipe, as a part of every
+  port - when a class here marks the DSCP and it has one of the switch's two queues; when the queue and
+  its pipe have no mask (a weight for each address is not a part of a port) and the pipe's scheduler
+  shares by weight (WF2Q+, Deficit Round Robin, QFQ - not FIFO, FlowQueue-CoDel or FlowQueue-PIE);
+  and when no class has a minimum of its own, every switch queue gets a part, and the parts add up to
+  100 at most;
 - **a pipe's bandwidth** - a front port's egress limit, when a rule sends everything leaving that port
   into the pipe: any protocol, source and destination, no port, DSCP or length, the way out (both ways:
-  the way in stays with the host), and a pipe without a mask. The switch limits a port, all of it, in
-  steps of 1 Mbit/s up to 100 Mbit/s and 10 Mbit/s up to 1 Gbit/s;
+  the way in stays with the host), a pipe without a mask, and no rule before it on that interface and
+  way that sends into another pipe - ipfw stops at the first rule that sends a packet to a pipe or a
+  queue, so a later rule sees only what that one leaves. The switch limits a port, all of it, in steps
+  of 1 Mbit/s up to 100 Mbit/s and 10 Mbit/s up to 1 Gbit/s: the tab shows the step written - a pipe of
+  155 Mbit/s is 150 at the port;
 - **with the host** - everything else, with why: a rule that matches no DSCP or more than one, a DSCP
-  no class marks or pf alone marks, a pipe's limit for one kind of traffic, the way in, a limit for each
-  address, an interface not behind the switch, a port an earlier rule limits.
+  no class marks or pf alone marks, a rule on an interface outside the switch, a pipe's limit for one
+  kind of traffic, the way in, a limit or a weight for each address, a scheduler that does not share by
+  weight, an earlier rule on the interface, a part that cannot be kept.
 
 Firewall: Shaper still shapes on the host: os-xgs-npu keeps every connection an enabled rule of it
 names with the host, off the hardware
@@ -278,7 +313,7 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   photographed: [dscp-2026-11-17.png](docs/images/measurements/dscp-2026-11-17.png). The same test
   had found Marked now at 0 during a marked run - pfctl prints every marked state `set-tos 0x00` -
   and the count now reads only that a mark is set;
-- **the rules** - `tools/test-rules.php`, 112 checks, run with OPNsense's own Plugin, FilterRule, Rule
+- **the rules** - `tools/test-rules.php`, 119 checks, run with OPNsense's own Plugin, FilterRule, Rule
   and Util of every release from 26.7 to 26.7.9, from opnsense/core's tags, and of opnsense/core's
   main branch of that day, under PHP 8.5. For sample classes it checks the line OPNsense
   writes - match, in, never quick, no state, no reply-to, the DSCP's ECN bits clear, the label -
@@ -289,42 +324,48 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   ending in a backslash, a class that narrows nothing, a DSCP out of range, 0 to match, a class
   without an ID; nothing while off, the default; a rule OPNsense refuses leaving the reload and the
   other classes alone; and the key each release writes the mark with;
-- **the model and the page's API** - `tools/test-mvc.php`, 65 checks, with stand-ins for OPNsense's
+- **the model and the page's API** - `tools/test-mvc.php`, 67 checks, with stand-ins for OPNsense's
   MVC base: each of those refusals at the save, on the field it concerns, a class read whole when
   any field of it changed, and the message of OPNsense's own field type kept where it gave one; the
   status the page is given, an OPNsense with no key for the mark said, why each class makes no rule,
   and Apply's filter reload;
-- **the page's numbers** - `tools/test-status.py`, 36 checks: `status.py` reading a `rules.debug`, a
+- **the page's numbers** - `tools/test-status.py`, 39 checks: `status.py` reading a `rules.debug`, a
   `pfctl -v -s rules` and a `pfctl -v -s states` as OPNsense and pfctl write them, by each class's
   label - a connection with a mark set coming in counted once, the mark printed `set-tos 0x00` as
   pfctl prints every one, one going out or with no mark not counted, and nothing while no class
   marks - and a rule set pf refused told by `/tmp/rules.error`'s time;
 - **the self-update** - `tools/test-self-update.py`, 45 checks, as os-blocklists has it;
-- **the switch's queues** (2026-11-19) - `tools/test-hardware.py`, 34 checks: which classes take the
-  switch's two places, in the page's order; the queue, strict or weighted, and the ports' scheduling;
-  minimums taken while they add up to 100, and only on a class with a place; Firewall: Shaper's parts
-  after them; the weight sequence, every queue at least one turn, 128 at most.
-  `tools/test-shaper-map.py`, 44 checks: Firewall: Shaper configurations - pipes with a bandwidth and
-  a mask, queues with weights, rules by interface, direction, addresses, ports and DSCP - and for each
-  rule what the switch takes and why the rest stays with the host. `tools/test-apply.py`, 22 checks:
-  `apply.py` with a stand-in for os-xgs-npu's switch tool - the settings written and applied, a refusal
-  said in the tool's words, what the plugin set put back when it is off, on the XGS 136 family or
-  removed, another plugin's settings neither overwritten nor cleared, an os-xgs-npu without the
-  switch tool said as such. And in `tools/test-mvc.php`, a
-  minimum refused at the save on a class without a place and past 100, the switch queue and the
-  Firewall: Shaper tab on the page, and Apply setting the switch after the filter reload;
-- **the strings** - `tools/check-strings.py`: each of the 178 strings the GUI shows - the page, the
+- **the switch's queues** (2026-11-19) - `tools/test-rules.php` writes, on an XGS 3300 with the switch
+  tool, the rule taking each place's DSCP off other traffic before every class's rule, none for a class
+  that makes no rule, for Best Effort or CS1, IPv6 alone, another model or no switch tool.
+  `tools/test-hardware.py`, 38 checks: the places as the rules file names them; the queue, strict or
+  weighted, and the ports' scheduling; a minimum beside a strict class, or minimums past 100, giving the
+  switch nothing; Firewall: Shaper's parts after them; the weight sequence, every queue at least one
+  turn, 128 at most. `tools/test-shaper-map.py`, 58 checks: Firewall: Shaper configurations - pipes with
+  a bandwidth, a mask and a scheduler, queues with weights and masks, rules by interface, direction,
+  addresses, ports and DSCP, one after another on an interface - and for each rule what the switch takes,
+  the limit's step, and why the rest stays with the host. `tools/test-apply.py`, 30 checks: `apply.py`
+  with a stand-in for os-xgs-npu's switch tool - the settings written and applied, "running" while it
+  runs, a refusal said in the tool's words, a tool out of time or without a word, a refused plan or a
+  rule set pf refused, what the plugin set put back when it is off, on the XGS 136 family or removed -
+  its settings file gone first - another plugin's settings neither overwritten nor cleared, an
+  os-xgs-npu without the switch tool. And in `tools/test-mvc.php`, a minimum refused at the save on a
+  class without a place, past 100 and beside a strict class; the status read with the switch read again
+  for the cards and without for the grids; and Apply setting the switch in the background after the
+  filter reload;
+- **the strings** - `tools/check-strings.py`: each of the 193 strings the GUI shows - the page, the
   dialog's labels, help and the DSCPs' names, the model's messages, the menu, the ACL and the PHP's -
   is listed in `source.json`. The first part's have their Arabic in opnsense-arabic (pull request
-  [#80](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/80), merged 2026-11-18); 56 of the
+  [#80](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/80), merged 2026-11-18); 70 of the
   second part's do not yet, and `tools/check-strings.py` lists them;
-- **the installation** - `tools/test-install.py`, 32 checks: `install/install.sh`,
+- **the installation** - `tools/test-install.py`, 34 checks: `install/install.sh`,
   `install/uninstall.sh`, the package's `post-install.sh` and `post-deinstall.sh`, and
   `place-menu.sh`, run in a temporary root with stand-ins for `service`, `configctl` and `pfctl` -
   every file laid down with its mode and taken away again, the menu in XGS or Firewall, nothing
   copied when a file has a syntax error, the rules hook gone before the filter reload that takes
   its rules out of pf, and a rule still in pf said; since 2026-11-19 the switch's queues put back
-  first, and by `post-deinstall.sh` only when the settings file is this plugin's;
+  first, by `post-deinstall.sh` only when the settings file is this plugin's, and that file removed
+  whatever the put-back did;
 - **the rest of the checks** - every installed file removed by the uninstaller
   (`tools/check-uninstall.sh`), `php -l`, `py_compile` and pyflakes, `sh -n`, XML and JSON, nothing
   private, no Arabic in the code, the page kit.
