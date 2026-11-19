@@ -3,7 +3,8 @@
  # Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
  #
  # Firewall: Traffic Priority (XGS: Traffic Priority when os-xgs-npu is installed) - the classes, each
- # marking the connections it matches with a DSCP through pf, and what pf holds of each one.
+ # marking the connections it matches with a DSCP through pf, what pf holds of each one, its place in
+ # an XGS appliance's switch queues, and each rule of Firewall: Shaper with what the switch takes of it.
  #}
 
 <style>
@@ -25,7 +26,8 @@
     /* A grid whose columns fill the width shows a one-pixel sideways bar when no vertical one takes
        the difference; wide screens never need to scroll it sideways. */
     @media (min-width: 768px) {
-        #{{ formGridClass['table_id'] }} .tabulator-tableholder, #grid-applied .tabulator-tableholder { overflow-x: hidden; }
+        #{{ formGridClass['table_id'] }} .tabulator-tableholder, #grid-applied .tabulator-tableholder,
+        #grid-shaper .tabulator-tableholder { overflow-x: hidden; }
     }
 </style>
 
@@ -85,12 +87,148 @@
             'key': "{{ lang._('this OPNsense writes no mark on a rule') }}"
         };
 
+        /* A text with %s in it, each filled in turn. */
+        function fill(text) {
+            const args = Array.prototype.slice.call(arguments, 1);
+            return String(text).replace(/%s/g, function () {
+                return args.length ? String(args.shift()) : '';
+            });
+        }
+
+        /* A rate in kbit/s, as a person reads it. */
+        function rate(kbit) {
+            if (kbit === null || kbit === undefined) {
+                return '-';
+            }
+            if (kbit >= 1000000 && kbit % 100000 === 0) {
+                return (kbit / 1000000) + ' Gbit/s';
+            }
+            if (kbit >= 1000 && kbit % 1000 === 0) {
+                return (kbit / 1000) + ' Mbit/s';
+            }
+            return kbit + ' kbit/s';
+        }
+
+        /* Why the switch is not set at all (status.py's hardware.why_not, apply.py's decision). */
+        const switchNot = {
+            'plugin-off': "{{ lang._('Traffic Priority is off') }}",
+            'no-project': "{{ lang._('no switch here: pf alone marks') }}",
+            'read-only': "{{ lang._('not applied on this model yet: os-xgs-npu only reads its switch') }}",
+            'no-switch': "{{ lang._('no switch os-xgs-npu knows on this model') }}",
+            'follow-off': "{{ lang._('Follow Firewall: Shaper is off (General)') }}",
+            'unknown': "{{ lang._('not known') }}"
+        };
+
+        /* A class's place in the switch (hardware.py's plan). */
+        function place(sw, not) {
+            if (not) {
+                return '<span class="text-muted">' + (switchNot[not] || not) + '</span>';
+            }
+            if (!sw) {
+                return '-';
+            }
+            let text;
+            switch (sw.why) {
+                case 'hardware':
+                    text = sw.kind === 'strict' ? fill("{{ lang._('queue %s, strict') }}", sw.queue) :
+                        fill("{{ lang._('queue %s, weighted: %s percent of a full port at least') }}", sw.queue, sw.percent);
+                    break;
+                case 'third':
+                    text = '<span class="text-warning">' + "{{ lang._('pf only: the switch takes two DSCPs, and two come before it') }}" + '</span>';
+                    break;
+                case 'best-effort':
+                    text = "{{ lang._('queue 0, with everything else') }}";
+                    break;
+                case 'ipv6':
+                    text = "{{ lang._('queue 0: the switch picks out IPv4 alone') }}";
+                    break;
+                case 'dscp':
+                    text = '<span class="text-warning">' + "{{ lang._('DSCP not one of 0 to 63') }}" + '</span>';
+                    break;
+                default:
+                    text = '<span class="text-muted">' + "{{ lang._('off') }}" + '</span>';
+            }
+            if (sw.minimum_why === 'not-hardware') {
+                text += ' · <span class="text-warning">' + "{{ lang._('its minimum is not held: no queue of its own') }}" + '</span>';
+            } else if (sw.minimum_why === 'over') {
+                text += ' · <span class="text-warning">' + "{{ lang._('its minimum is not held: the minimums add up to more than 100 percent') }}" + '</span>';
+            }
+            return text;
+        }
+
+        /* What the switch takes of a rule of Firewall: Shaper, and what stays with the host (shaper_map.py). */
+        const shaperHost = {
+            'off': "{{ lang._('switched off in Firewall: Shaper') }}",
+            'target-off': "{{ lang._('its pipe or queue is off or gone') }}",
+            'per-host': "{{ lang._('a limit for each address, by its pipe\'s mask: the switch limits a port') }}",
+            'not-switch-port': "{{ lang._('its interface is not a front port behind the switch') }}",
+            'rate': "{{ lang._('a rate the switch cannot set: 64 kbit/s to 10 Gbit/s') }}",
+            'way-in': "{{ lang._('the way in: the switch limits what leaves a port') }}",
+            'port-taken': "{{ lang._('an earlier rule limits this port: %s') }}",
+            'no-dscp': "{{ lang._('it matches no DSCP: the switch tells traffic apart by a DSCP alone') }}",
+            'dscp-name': "{{ lang._('a DSCP this page does not know') }}",
+            'class-limit': "{{ lang._('its pipe\'s %s for this traffic alone: the switch limits a port, not a class') }}",
+            'dscps': "{{ lang._('more than one DSCP: each has a queue of its own in the switch') }}",
+            'best-effort': "{{ lang._('Best Effort is the switch\'s queue 0, with everything else') }}",
+            'unmarked': "{{ lang._('no class here marks DSCP %s') }}",
+            'pf-only': "{{ lang._('DSCP %s is marked by pf only: the switch takes two DSCPs') }}",
+            'dscp-only': "{{ lang._('its other conditions are not the switch\'s: it picks out the DSCP alone') }}",
+            'one-queue': "{{ lang._('the only queue of its pipe: its weight shares nothing') }}",
+            'minimum-wins': "{{ lang._('a class\'s own minimum for DSCP %s is held instead') }}",
+            'share-taken': "{{ lang._('an earlier rule gave DSCP %s its part: %s') }}",
+            'share-over': "{{ lang._('its part, %s percent, would take the parts past 100 percent') }}"
+        };
+
+        function shaperHardware(row) {
+            if (!row.hardware || !row.hardware.length) {
+                return '<span class="text-muted">-</span>';
+            }
+            return row.hardware.map(function (item) {
+                if (item.what === 'limit') {
+                    return fill("{{ lang._('%s: egress limit %s') }}", item.port, rate(item.kbit));
+                }
+                if (item.what === 'share') {
+                    return fill("{{ lang._('DSCP %s: %s percent of every port at least, queue %s') }}", item.dscp, item.percent, item.queue);
+                }
+                return fill("{{ lang._('DSCP %s in queue %s') }}", item.dscp, item.queue);
+            }).join('<br/>');
+        }
+
+        function shaperStays(row) {
+            if (!row.host || !row.host.length) {
+                return '<span class="text-muted">-</span>';
+            }
+            return row.host.map(function (item) {
+                const text = switchNot[item.why] || shaperHost[item.why] || item.why;
+                switch (item.why) {
+                    case 'port-taken':
+                    case 'share-taken':
+                        return item.why === 'port-taken' ? fill(text, item.by) : fill(text, item.dscp, item.by);
+                    case 'class-limit':
+                        return fill(text, rate(item.kbit));
+                    case 'unmarked':
+                    case 'pf-only':
+                    case 'minimum-wins':
+                        return fill(text, item.dscp);
+                    case 'share-over':
+                        return fill(text, item.percent);
+                }
+                return text;
+            }).join('<br/>');
+        }
+
+        const directions = {
+            'in': "{{ lang._('in') }}",
+            'out': "{{ lang._('out') }}",
+            '': "{{ lang._('both ways') }}"
+        };
+
         /*
          * Four cards: on or off, the classes switched on that pf holds rules for - and when pf refused the
          * last rule set, or this OPNsense writes no mark, that instead - the connections pf holds now with
          * a mark set coming in, each once, while a class marks - pfctl shows that a mark is set, not
-         * which one (status.py's marked) - and the switch's queues - not measured yet, so nothing is set
-         * there.
+         * which one (status.py's marked) - and the switch's queues: how many DSCPs have one, and what the
+         * last Apply did, or why nothing is set there.
          */
         function draw(data) {
             const $cards = $('#tp-cards').empty();
@@ -112,8 +250,20 @@
                     data.refused ? "{{ lang._('last rule set refused by pf') }}" : "{{ lang._('classes with rules loaded') }}"));
             $cards.append(card('', 'fa-link', "{{ lang._('Marked now') }}", count(data.marked),
                 "{{ lang._('connections with a mark set coming in, each once') }}"));
-            $cards.append(card('', 'fa-sitemap', "{{ lang._('Switch queues') }}", "{{ lang._('not measured yet') }}",
-                "{{ lang._('DSCP written; no queue set') }}"));
+            const hw = data.hardware || {};
+            const last = hw.last || {};
+            if (hw.why_not) {
+                $cards.append(card('', 'fa-sitemap', "{{ lang._('Switch queues') }}", "{{ lang._('none set') }}",
+                    plain(switchNot[hw.why_not] || hw.why_not)));
+            } else {
+                const failed = last.status === 'failed' || last.status === 'refused';
+                $cards.append(card(failed ? 'bad' : (hw.pending ? 'warn' : (last.status === 'applied' ? 'ok' : '')),
+                    'fa-sitemap', "{{ lang._('Switch queues') }}",
+                    fill("{{ lang._('%s of 2') }}", (hw.dscps || []).length),
+                    failed ? "{{ lang._('last Apply not set:') }}" + ' ' + (last.said || '') :
+                        hw.pending ? "{{ lang._('changed since the last Apply') }}" :
+                        last.time ? "{{ lang._('set by Apply') }}" + ' ' + last.time : "{{ lang._('DSCPs with a queue of their own') }}"));
+            }
             $('#tp-refused').toggle(!!data.refused);
             $('#tp-nokey').toggle(data.writes_mark === false);
             $('#tp-project').toggle(!!data.project);
@@ -165,7 +315,27 @@
                         return count(row[column.id]);
                     },
                     queue: function (column, row) {
-                        return '<span class="text-muted">' + "{{ lang._('not measured yet') }}" + '</span>';
+                        return place(row.switch, row.switch_not);
+                    }
+                }
+            }
+        });
+
+        /* Each rule of Firewall: Shaper, read and never written: what the switch takes of it, and what
+           stays with the host, and why. The API escapes what it returns, as above. */
+        $('#grid-shaper').UIBootgrid({
+            search: '/api/trafficpriority/service/search_shaper',
+            options: {
+                selection: false,
+                formatters: {
+                    direction: function (column, row) {
+                        return directions[row.direction] || row.direction;
+                    },
+                    taken: function (column, row) {
+                        return shaperHardware(row);
+                    },
+                    stays: function (column, row) {
+                        return shaperStays(row);
                     }
                 }
             }
@@ -209,6 +379,7 @@
             onAction: function () {
                 refresh();
                 $('#grid-applied').bootgrid('reload');
+                $('#grid-shaper').bootgrid('reload');
             }
         });
 
@@ -220,6 +391,8 @@
                 $("#{{ formGridClass['table_id'] }}").bootgrid('reload');
             } else if (tab === '#applied') {
                 $('#grid-applied').bootgrid('reload');
+            } else if (tab === '#shaper') {
+                $('#grid-shaper').bootgrid('reload');
             }
         });
 
@@ -245,6 +418,7 @@
 <ul class="nav nav-tabs" data-tabs="tabs" id="maintabs">
     <li class="active"><a data-toggle="tab" href="#classes">{{ lang._('Classes') }}</a></li>
     <li><a data-toggle="tab" href="#applied">{{ lang._('Applied') }}</a></li>
+    <li><a data-toggle="tab" href="#shaper">{{ lang._('Firewall: Shaper') }}</a></li>
     <li><a data-toggle="tab" href="#general">{{ lang._('General') }}</a></li>
 </ul>
 
@@ -280,8 +454,32 @@
         <div id="tp-project" class="text-muted" style="display: none; padding: 0 15px 15px;">
             {{ lang._('os-xgs-npu is installed: it puts a marked IPv4 connection into hardware with its DSCP - measured with these rules on an XGS 3300 - and keeps a marked IPv6 connection with the host. A connection in hardware adds no more packets or bytes here.') }}
         </div>
+        <div class="text-muted" style="padding: 0 15px 15px;">
+            {{ lang._('Switch queue: on an XGS 3300 family appliance, every frame the coprocessor sends into its switch waits in queue 0, marked or not; os-xgs-npu picks out two DSCPs there and gives each a queue of its own, on every front port behind the switch at once - the first two in this list\'s order, IPv4. A class without a minimum is strict: it goes before everything else, and can take a whole port. One with a minimum is weighted: it keeps at least that part of a full port, and the rest keeps what is left. The front ports on the coprocessor\'s own MACs - F1 and F2 of the XGS 3300 - are not behind the switch. Measured on an XGS 3300: EF picked out into queue 7; not yet with these classes, nor a minimum held.') }}
+        </div>
         <div id="tp-pf-alone" class="text-muted" style="display: none; padding: 0 15px 15px;">
             {{ lang._('pf alone marks connections here: without os-xgs-npu no hardware carries them.') }}
+        </div>
+    </div>
+    <div id="shaper" class="tab-pane">
+        <table id="grid-shaper" class="table table-condensed table-hover table-striped table-responsive">
+            <thead>
+                <tr>
+                    <th data-column-id="uuid" data-type="string" data-identifier="true" data-visible="false">{{ lang._('ID') }}</th>
+                    <th data-column-id="sequence" data-type="numeric" data-width="7em">{{ lang._('Sequence') }}</th>
+                    <th data-column-id="description" data-type="string">{{ lang._('Rule') }}</th>
+                    <th data-column-id="interface" data-type="string" data-width="8em">{{ lang._('Interface') }}</th>
+                    <th data-column-id="direction" data-formatter="direction" data-type="string" data-width="7em">{{ lang._('Direction') }}</th>
+                    <th data-column-id="target" data-type="string">{{ lang._('Pipe or queue') }}</th>
+                    <th data-column-id="hardware" data-formatter="taken" data-type="string" data-sortable="false">{{ lang._('In the switch') }}</th>
+                    <th data-column-id="host" data-formatter="stays" data-type="string" data-sortable="false">{{ lang._('With the host') }}</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+        </table>
+        <div class="text-muted" style="padding: 0 15px 15px;">
+            {{ lang._('Firewall: Shaper is read here and never written, and it still shapes on the host: os-xgs-npu keeps every connection an enabled rule of it names with the host, off the hardware. With Follow Firewall: Shaper on (General), what the switch can do of a rule is done in its queues too, at Apply: a queue\'s weight, against the other queues of its pipe, as a part of every port for a DSCP a class here marks and has a queue for - a class\'s own minimum first, the parts together 100 percent at most - and a pipe\'s bandwidth as a front port\'s egress limit, where a rule sends everything leaving that port into the pipe, in the switch\'s steps of 1 Mbit/s up to 100 Mbit/s and 10 Mbit/s up to 1 Gbit/s. Not measured yet: a part or a limit from a rule here.') }}
         </div>
     </div>
     <div id="general" class="tab-pane">
