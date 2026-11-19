@@ -20,9 +20,10 @@ It prints one JSON object, {"status": "ok" | "failed", "message": ...}, and keep
 page in /var/db/os-trafficpriority/hardware.json - "running" from its start, so that the page, which
 starts it in the background after the filter reload and goes on, can say so until it ends.
 
-THE PLACES ARE THE FILTER RELOAD'S. The rules hook decides which DSCPs have a place in the switch and
-writes, for each, the rule that takes it off every other connection (OPNsense\\TrafficPriority\\Hardware);
-the switch is given exactly those, read from the rules file pf was given (hardware.from_rules()). When
+THE PLACES COME WITH THE FILTER RELOAD. While a class has a place in the switch, the rules hook writes
+before every class's rule the one that sets every IPv4 connection's DSCP to 0, both ways
+(OPNsense\\TrafficPriority\\Hardware); the switch is given the classes' DSCPs only while the rules file
+pf was given holds it, from the classes it holds a rule for (hardware.from_rules(), places_of()). When
 pf refused that rule set, the switch is left as it is: the rules pf still holds are the set before it.
 
 WHERE NOTHING IS SET: without os-xgs-npu (a plain OPNsense: pf alone marks), or with an os-xgs-npu that
@@ -121,7 +122,8 @@ def decide(root, model, text=''):
         why_not = model.get('why') or 'no-switch'
     else:
         why_not = ''
-    places, written = hardware.from_rules(text)
+    cleared, written = hardware.from_rules(text)
+    places = hardware.places_of(classes, written, cleared)
     marked = {hardware.dscp(c.get('dscp')) for c in hardware.ordered(classes)} - {None}
     first = hardware.plan(classes, places, written)
     own_minimum = {d['dscp'] for d in first['dscps']} if any(

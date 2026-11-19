@@ -108,16 +108,12 @@ def voice(minimum='', dscp='46', uuid='c1', sequence='100'):
 
 
 def rules(classes):
-    """The rules file the hook writes for these classes (tools/test-rules.php holds the hook to it): a
-    rule taking each place's DSCP off other traffic - the first two DSCPs above Best Effort, by sequence -
+    """The rules file the hook writes for these classes (tools/test-rules.php holds the hook to it):
+    while one has a place - a DSCP above Best Effort - the rule setting every IPv4 connection's DSCP to 0,
     then the classes' own."""
-    places = []
-    for c in sorted(classes, key=lambda c: int(c['sequence'])):
-        d = int(c['dscp'])
-        if d not in (0, 1, 8) and d not in places and len(places) < 2:
-            places.append(d)
-    return ''.join('match in inet from {any} to {any} tos 0x%02x scrub ( set-tos 0x00 ) label '
-                   '"trafficpriority-clear-%d"\n' % (d << 2, d) for d in places) + \
+    placed = any(int(c['dscp']) not in (0, 1, 8) for c in classes)
+    return ('match in inet from {any} to {any} scrub ( set-tos 0x00 ) label "trafficpriority-clear"\n'
+            if placed else '') + \
         ''.join('match in on igb1 inet scrub ( set-tos 0x%02x ) label "trafficpriority-%s"\n' % (int(c['dscp']) << 2,
                                                                                                 c['uuid'])
                 for c in classes)

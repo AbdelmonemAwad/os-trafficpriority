@@ -14,10 +14,10 @@
  * (OPNsense\TrafficPriority\Marking says what the rule is and why it is so). Off by default: nothing
  * is registered until Enabled is on and a class is applied.
  *
- * On an XGS 3300 whose switch os-xgs-npu sets, the DSCPs that have a place in the switch's queues
- * (OPNsense\TrafficPriority\Hardware) are first taken off every other connection - the switch queues
- * every frame of a DSCP, whoever marked it - by a rule for each, registered before every class's rule,
- * so that the classes' own marks come after it and are the ones their connections keep.
+ * On an XGS 3300 whose switch os-xgs-npu sets, while a class has a place in the switch's queues
+ * (OPNsense\TrafficPriority\Hardware), every IPv4 connection's DSCP is first set to 0, both ways - the
+ * switch queues every frame by its DSCP, whoever marked it - by one rule, registered before every
+ * class's rule, so that the classes' own marks come after it and are the ones their connections keep.
  *
  * A hook that throws stops the filter reload: OPNsense calls it with nothing around it
  * (plugins.inc:244-259), and the reload is what loads every rule of the owner's. So nothing here may
@@ -56,7 +56,7 @@ function trafficpriority_firewall(Plugin $fw)
         return;
     }
 
-    /* each place's DSCP taken off other traffic first; the classes' marks after it */
+    /* while a class has a place, every IPv4 connection's DSCP set to 0 first; the classes' marks after it */
     foreach ($clearing as $rule) {
         try {
             $fw->registerFilterRule(Marking::PRIORITY, $rule);

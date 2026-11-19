@@ -9,22 +9,27 @@ namespace OPNsense\TrafficPriority;
 
 /**
  * Which classes have a place in an XGS appliance's switch queues - decided here, at every filter
- * reload, and written into the rules file as the rules that take each place's DSCP off other traffic;
- * scripts/trafficpriority/apply.py gives the switch the DSCPs those rules name, and nothing else. The
- * model refuses at the save a minimum this would not hold.
+ * reload - and, while one has, the rule written into the rules file before every class's that sets
+ * every IPv4 connection's DSCP to 0; scripts/trafficpriority/apply.py gives the switch the classes'
+ * DSCPs only while the rules file holds that rule, the places taken as here from the classes it holds a
+ * rule for (hardware.py's places_of()). The model refuses at the save a minimum this would not hold.
  *
  * Two TCAM entries are free in the switch (os-xgs-npu's switch_qos.py), so two DSCPs at most have a
  * queue of their own: those of the classes switched on that make rules (Marking::problem() none), in
  * the page's order - by sequence, then as listed - a DSCP of Best Effort (0) or below it (CS1, and LE,
  * 1) left out, and so is a class marking IPv6 alone, the switch's key being IPv4's.
  *
- * THE SWITCH QUEUES EVERY FRAME OF A DSCP, not a class's connections: its entry picks out every frame
- * leaving the coprocessor with that DSCP, whoever marked it - a computer marking its own traffic EF, a
- * download arriving with EF. So for each place's DSCP a rule comes first that sets the DSCP to 0 on
- * every connection opening with it, on every interface, both ways; the classes' own rules come after
- * it and mark their connections again - of two match rules pf keeps the last one's mark (pf.c:5039-5056)
- * - so that only the classes' connections carry the DSCP. pf fixes a connection's mark when it opens:
- * a connection that opens without the DSCP and whose replies carry it keeps it on the way back.
+ * THE SWITCH QUEUES EVERY FRAME BY ITS DSCP, not a class's connections: its entry picks out every
+ * frame leaving the coprocessor with a place's DSCP, whoever marked it - a computer marking its own
+ * traffic EF, a download arriving with EF. So while a class has a place, one rule comes first, on every
+ * interface, that sets the DSCP of every IPv4 connection - the switch's key - to 0, both ways: pf writes
+ * a match rule's mark on a connection's packets both ways (on an XGS 3300 on 2026-11-19, a class
+ * marking DSCP 0 put the replies of its connections, sent marked EF, into queue 0). The classes' own
+ * rules come after it and mark their connections again - of two match rules pf keeps the last one's
+ * mark (pf.c:5039-5056) - so that only the classes' connections carry a DSCP into the switch. A rule
+ * for the connections opening with a place's DSCP alone was not enough: a connection opened unmarked
+ * whose replies came marked EF put 83,771 frames into queue 7 there. Connections the firewall opens
+ * itself are not among them: the rule is read where connections come in, as the classes' are.
  *
  * A minimum is held by the switch's weighted queues: only on a class with a place; the minimums of
  * the classes switched on add up to 100 at most; and not beside a class with a place and no minimum,
@@ -35,8 +40,8 @@ class Hardware
     const PLACES = 2;
     /* Best Effort, and the DSCPs below it: LE (1, RFC 8622) and CS1 */
     const BELOW = [0 => 'best-effort', 1 => 'below-default', 8 => 'below-default'];
-    /* each place's rule: this, then the DSCP */
-    const LABEL = 'trafficpriority-clear-';
+    /* the rule that sets every IPv4 connection's DSCP to 0 while a class has a place */
+    const LABEL = 'trafficpriority-clear';
     /* os-xgs-npu's switch tool, and the one model it writes on: the XGS 3300 */
     const TOOL = '/usr/local/opnsense/scripts/xgs/switch_qos.py';
     const WRITES = 'AMDA0202-0004';
@@ -177,31 +182,27 @@ class Hardware
     }
 
     /**
-     * The rules that take each place's DSCP off other traffic, as registerFilterRule() takes them, in
-     * the places' order: a match rule on every interface where connections come in, IPv4 - the switch's
-     * key - opening with the DSCP, which sets it to 0, both ways. Registered before every class's rule,
-     * whose mark then comes after it. $key is Marking::markKey()'s.
+     * The rule that sets every IPv4 connection's DSCP to 0 while a class has a place - $dscps, the
+     * places' DSCPs, not empty - as registerFilterRule() takes it: one match rule on every interface
+     * where connections come in, for IPv4 alone - the switch's key - and nothing else to match, which
+     * sets the DSCP to 0, both ways. Registered before every class's rule, whose mark then comes after
+     * it. None while no class has a place. $key is Marking::markKey()'s.
      */
     public static function clearing(array $dscps, $key)
     {
-        if (!in_array($key, ['scrub', 'dn'], true)) {
+        if (empty($dscps) || !in_array($key, ['scrub', 'dn'], true)) {
             return [];
         }
-        $rules = [];
-        foreach ($dscps as $dscp) {
-            $mark = 'set-tos ' . Marking::tos(0);
-            $rules[] = [
-                'type' => 'match',
-                'direction' => 'in',
-                'quick' => false,
-                'disablereplyto' => true,
-                'ipprotocol' => 'inet',
-                'tos' => Marking::tos($dscp),
-                $key => $key === 'scrub' ? $mark : 'scrub ( ' . $mark . ' )',
-                'label' => self::LABEL . $dscp,
-                'descr' => Marking::DESCR . sprintf('DSCP %d taken off other traffic', $dscp),
-            ];
-        }
-        return $rules;
+        $mark = 'set-tos ' . Marking::tos(0);
+        return [[
+            'type' => 'match',
+            'direction' => 'in',
+            'quick' => false,
+            'disablereplyto' => true,
+            'ipprotocol' => 'inet',
+            $key => $key === 'scrub' ? $mark : 'scrub ( ' . $mark . ' )',
+            'label' => self::LABEL,
+            'descr' => Marking::DESCR . 'DSCP set to 0 on every IPv4 connection no class marks',
+        ]];
     }
 }

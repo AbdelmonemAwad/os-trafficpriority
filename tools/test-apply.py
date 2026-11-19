@@ -5,8 +5,9 @@
 files and the rules file of a filter reload written here, and a stand-in for os-xgs-npu's switch tool
 (switch_qos.py) that says what model this is, keeps the settings file it is given and answers as it is
 told. What is checked: the settings file written with this plugin's name and what hardware.py and
-shaper_map.py decide from the places the rules file names, and the tool asked to apply it, "running"
-kept for the page while it does; a refusal or a failure of the tool said with the tool's own last line,
+shaper_map.py decide from the classes the rules file holds a rule for, while it holds the one setting
+every IPv4 connection's DSCP to 0, and the tool asked to apply it, "running" kept for the page while it
+does; a rules file without that rule giving the switch no class's queue; a refusal or a failure of the tool said with the tool's own last line,
 a tool that runs out of time or says nothing said as such; Traffic Priority off, nothing left for the
 switch, a minimum beside a strict class, the XGS 136 family - what this plugin set put back, its settings
 file removed before the tool is asked, and nothing of another plugin's touched or overwritten; a rule set
@@ -74,16 +75,17 @@ def config(on='1', classes=(('46', ''),), follow='0', shaper=''):
             '</classes></TrafficPriority>%s</OPNsense></opnsense>' % (on, follow, body, shaper))
 
 
+CLEARING = 'match in inet from {any} to {any} scrub ( set-tos 0x00 ) label "trafficpriority-clear"\n'
+
+
 def rules(classes=(('46', ''),)):
-    """The rules file as the hook writes it for these classes on an XGS 3300: each place's DSCP taken off
-    other traffic first - the first two above Best Effort - then the classes' own."""
-    places = []
-    for d, _ in classes:
-        if int(d) not in (0, 1, 8) and int(d) not in places and len(places) < 2:
-            places.append(int(d))
-    return ''.join('match in inet tos 0x%02x scrub ( set-tos 0x00 ) label "trafficpriority-clear-%d"\n' % (d << 2, d)
-                   for d in places) + ''.join('match in on igb1 inet scrub ( set-tos 0x%02x ) label "trafficpriority-%s"\n'
-                                              % (int(d) << 2, U % i) for i, (d, _) in enumerate(classes))
+    """The rules file as the hook writes it for these classes on an XGS 3300: while one has a place - a
+    DSCP above Best Effort - the rule setting every IPv4 connection's DSCP to 0 first, then the classes'
+    own."""
+    placed = any(int(d) not in (0, 1, 8) for d, _ in classes)
+    return (CLEARING if placed else '') + ''.join('match in on igb1 inet scrub ( set-tos 0x%02x ) label '
+                                                  '"trafficpriority-%s"\n' % (int(d) << 2, U % i)
+                                                  for i, (d, _) in enumerate(classes))
 
 
 SHAPER = ('<TrafficShaper><pipes><pipe uuid="p1"><enabled>1</enabled><bandwidth>100</bandwidth>'
@@ -166,10 +168,15 @@ with tempfile.TemporaryDirectory() as tmp:
     check('minimums: all weighted, 20 and 30 turns against 50 for the rest',
           (settings()['scheduling'], settings()['weights'].count(7), settings()['weights'].count(6),
            settings()['weights'].count(0)), ({'*': 0}, 20, 30, 50))
-    # the places are the rules file's: a class the last filter reload gave no place has none
+    # the places come with the rules file: a class the last filter reload wrote no rule for has none
     given(config(classes=both), ruled=rules((('46', ''),)))
     run()
     check('the switch given only what the rules file places', settings()['classes'], [{'dscp': 46, 'mask': 63, 'queue': 7}])
+    # and without the rule setting every IPv4 connection's DSCP to 0 - a filter reload before the switch
+    # tool was there - no class has a queue in the switch: what was set put back
+    given(config(classes=both), ruled=rules(both).replace(CLEARING, ''))
+    check('a rules file without the rule setting DSCP 0: nothing for the switch, what was set put back',
+          (run(), calls(), settings()), ({'status': 'ok', 'message': 'cleared'}, [['clear', None, 'running']], None))
 
     # the tool refuses, fails, runs out of time, says nothing
     given(config(), ruled=rules(), answer={'rc': 1, 'err': 'TCAM entry 3 is in use by something else (page 0 keys '

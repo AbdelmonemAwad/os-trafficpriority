@@ -3,10 +3,11 @@
 # Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
 """hardware.py: which classes have a place in the switch's queues on an XGS appliance, which queue each
 takes, the ports' scheduling and the chip's weights - against classes written here as config.xml holds
-them, and the rules file the last filter reload wrote (the places are the rules that take a DSCP off
-other traffic, which the rules hook writes for each; tools/test-rules.php holds the hook to its order).
-A class whose rule the file does not hold has no place; Best Effort, the DSCPs below it, IPv6 alone and a
-class switched off neither; a third DSCP is pf's alone. Strict classes in the top queues; minimums
+them, and the rules file the last filter reload wrote (the places are taken from the classes it holds
+a rule for, while it holds the one setting every IPv4 connection's DSCP to 0, which the rules hook
+writes while a class has a place; tools/test-rules.php holds the hook to it). A class whose rule the
+file does not hold has no place; Best Effort, the DSCPs below it, IPv6 alone and a class switched off
+neither; a third DSCP is pf's alone; and without that rule in the file, no class has one. Strict classes in the top queues; minimums
 weighted - and the two never mixed, nor minimums past 100: the switch is then given nothing, and why is
 said. Firewall: Shaper's parts only where no class has a minimum, every place has one, and they fit.
 And the weight sequence - each queue its share of turns, queue 0 the rest, every queue at least once, no
@@ -56,19 +57,40 @@ U2 = '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a02'
 U3 = '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a03'
 
 # ---- the places, from the rules file as OPNsense writes it ----
+CLEARING = ('match in inet from {any} to {any} scrub ( set-tos 0x00 ) label "trafficpriority-clear" '
+            '# Traffic Priority: DSCP set to 0 on every IPv4 connection no class marks')
 RULES = """# [prio: 0]
-match in inet from {any} to {any} tos 0xb8 scrub ( set-tos 0x00 ) label "trafficpriority-clear-46" # Traffic Priority: DSCP 46 taken off other traffic
-match in inet from {any} to {any} scrub ( set-tos 0x00 ) tos 0x88 label "trafficpriority-clear-34" # Traffic Priority: DSCP 34 taken off other traffic
+%s
 match in on igb1 inet from {any} to {any} scrub ( set-tos 0x88 ) label "trafficpriority-%s" # Traffic Priority: Video
 match in on igb1 inet from {any} to {any} scrub ( set-tos 0xb8 ) label "trafficpriority-%s" # Traffic Priority: Voice
 #debug:Interface opt9 not found
 # match in on ##opt9## inet from {any} to {any} scrub ( set-tos 0x88 ) label "trafficpriority-%s" # Traffic Priority: Gone
-""" % (U2, U1, U3)
-check('the places, in the rules file\'s order, and the classes it wrote a rule for - a rule commented out none',
-      hardware.from_rules(RULES), ([46, 34], {U1, U2}))
-check('a rules file with no place', hardware.from_rules('match in on igb1 inet scrub ( set-tos 0xb8 ) label '
-                                                        '"trafficpriority-%s"' % U1), ([], {U1}))
-check('no rules file', hardware.from_rules(''), ([], set()))
+""" % (CLEARING, U2, U1, U3)
+check('the rule setting every IPv4 connection\'s DSCP to 0 there, and the classes the file wrote a rule for - '
+      'a rule commented out none', hardware.from_rules(RULES), (True, {U1, U2}))
+check('a rules file without that rule', hardware.from_rules('match in on igb1 inet scrub ( set-tos 0xb8 ) label '
+                                                            '"trafficpriority-%s"' % U1), (False, {U1}))
+check('that rule commented out: not there', hardware.from_rules('# ' + CLEARING), (False, set()))
+check('a rule for one DSCP, as the version before wrote it: not that rule',
+      hardware.from_rules('match in inet from {any} to {any} tos 0xb8 scrub ( set-tos 0x00 ) label '
+                          '"trafficpriority-clear-46"'), (False, set()))
+check('no rules file', hardware.from_rules(''), (False, set()))
+
+# ---- the places, as the rules hook takes them, from the classes the file holds a rule for ----
+cleared, written = hardware.from_rules(RULES)
+check('the file above: Video (34) then Voice (46), by sequence; Gone, commented out, none before them',
+      hardware.places_of([cls(U1, '46', '200'), cls(U2, '34', '100'), cls(U3, '40', '50')], written, cleared),
+      [34, 46])
+check('the same classes without the rule setting DSCP 0 in the file: no place at all',
+      hardware.places_of([cls(U1, '46', '200'), cls(U2, '34', '100')], written, False), [])
+check('a class the file holds no rule for: none - the next DSCP has its place',
+      hardware.places_of([cls('a', '46'), cls('b', '34'), cls('c', '40')], {'a', 'c'}, True), [46, 40])
+check('two at most; classes of one DSCP one place',
+      hardware.places_of([cls('a', '46'), cls('b', '46'), cls('c', '34'), cls('d', '40')], set('abcd'), True), [46, 34])
+check('Best Effort, CS1 and LE below it, IPv6 alone, a class switched off, a DSCP not readable: none; a class of '
+      'IPv4 and IPv6 has one', hardware.places_of(
+          [cls('a', '0'), cls('b', '8'), cls('c', '1'), cls('d', '46', ipprotocol='inet6'), cls('e', '34', enabled='0'),
+           cls('f', 'x'), cls('g', '10', ipprotocol='inet46')], set('abcdefg'), True), [10])
 
 # ---- which class has a place ----
 p = plan([cls('a', '46'), cls('b', '34'), cls('c', '40')], [46, 34])

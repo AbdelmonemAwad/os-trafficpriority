@@ -10,13 +10,14 @@ shaper_map.py takes from Firewall: Shaper, and the places the last filter reload
 apply.py writes what this decides into os-xgs-npu's settings file for the switch (switch_qos.py), and
 status.py shows it.
 
-THE PLACES ARE THE RULES FILE'S. The rules hook decides at every filter reload which DSCPs have a
-place in the switch (OPNsense\\TrafficPriority\\Hardware): at most two, those of the classes switched
-on that make a rule, in the page's order, IPv4, above Best Effort - and it writes, for each, the rule
-that takes that DSCP off every other connection, labelled "trafficpriority-clear-<DSCP>". Those rules
-are what this reads (from_rules()): the switch is given a DSCP only when pf was given the rule that
-leaves it to the classes' connections alone - the switch queues every frame carrying it, whoever marked
-it. A class whose own rules the file does not hold has no place either.
+THE PLACES COME WITH THE RULES FILE. The rules hook decides at every filter reload whether a class
+has a place in the switch (OPNsense\\TrafficPriority\\Hardware) - at most two DSCPs, those of the
+classes switched on that make a rule, in the page's order, IPv4, above Best Effort - and while one has,
+it writes before every class's rule the one that sets every IPv4 connection's DSCP to 0, both ways,
+labelled "trafficpriority-clear": the switch queues every frame by its DSCP, whoever marked it, so only
+the classes' connections may carry one. This reads the file (from_rules()): the switch is given the
+classes' DSCPs only while the file holds that rule, and the places are taken as the hook takes them,
+from the classes whose own rules the file holds (places_of()) - a class it holds no rule for has none.
 
 WHAT THE SWITCH CAN DO, measured by os-xgs-npu on the second XGS 3300 (2026-11-11, 2026-11-17):
   - a frame the coprocessor sends into the switch waits in queue 0 whatever its DSCP, unless a TCAM
@@ -55,7 +56,7 @@ ENTRIES = 2                 # TCAM entries 3 and 255: the switch tool's two plac
 NO_SEQUENCE = 100000        # Marking::NO_SEQUENCE: a class whose sequence cannot be read goes first
 MAX_TURNS = 128             # the chip's weight table
 BELOW = {0: 'best-effort', 1: 'below-default', 8: 'below-default'}     # Hardware::BELOW
-CLEAR = re.compile(r'label "trafficpriority-clear-([0-9]{1,2})"')
+CLEAR = re.compile(r'label "trafficpriority-clear"')       # Hardware::LABEL
 LABELED = re.compile(r'label "trafficpriority-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"')
 
 
@@ -111,20 +112,36 @@ def ordered(classes):
 
 
 def from_rules(text):
-    """What the last filter reload gave pf, from its rules file: (the places' DSCPs in their order, the
-    UUIDs of the classes it wrote a rule for). A rule written commented out - OPNsense could not place
-    it - counts for neither."""
-    places, written = [], set()
+    """What the last filter reload gave pf, from its rules file: (whether it holds the rule that sets
+    every IPv4 connection's DSCP to 0, the UUIDs of the classes it wrote a rule for). A rule written
+    commented out - OPNsense could not place it - counts for neither."""
+    cleared, written = False, set()
     for line in (text or '').splitlines():
         if line.lstrip().startswith('#'):
             continue
-        found = CLEAR.search(line)
-        if found and int(found.group(1)) not in places:
-            places.append(int(found.group(1)))
+        if CLEAR.search(line):
+            cleared = True
         found = LABELED.search(line)
         if found:
             written.add(found.group(1))
-    return places, written
+    return cleared, written
+
+
+def places_of(classes, written, cleared):
+    """The DSCPs with a queue of their own, in order, as the rules hook takes them (Hardware::places()):
+    those of the classes switched on whose rules the file holds (written), in the page's order, IPv4,
+    above Best Effort, two at most. None while the file does not hold the rule that sets every IPv4
+    connection's DSCP to 0 (cleared): the switch then holds no class's queue."""
+    out = []
+    if not cleared:
+        return out
+    for c in ordered(classes):
+        d = dscp(c.get('dscp'))
+        if c['uuid'] not in written or d is None or d in BELOW or (c.get('ipprotocol') or 'inet') == 'inet6':
+            continue
+        if d not in out and len(out) < ENTRIES:
+            out.append(d)
+    return out
 
 
 def plan(classes, places, written, shares=None):
@@ -133,7 +150,7 @@ def plan(classes, places, written, shares=None):
     'classes': {uuid: {'why', 'dscp', 'queue', 'kind', 'percent', 'minimum': the class's own or None,
     'minimum_why': '' | 'not-hardware'}}, 'mode': 0-7 or None, 'weights': [...] or None,
     'percent': {queue: percent}, 'refused': '' | 'mix' | 'over', 'shares_why': '' | 'minimum-wins' |
-    'beside-strict' | 'share-over'}. places and written: from_rules(). shares: {dscp: percent} from
+    'beside-strict' | 'share-over'}. places: places_of(); written: from_rules(). shares: {dscp: percent} from
     Firewall: Shaper. With 'refused', nothing is for the switch."""
     shares = shares or {}
     rows = {}
