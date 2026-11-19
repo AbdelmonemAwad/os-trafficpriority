@@ -228,6 +228,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # uninstall.sh: everything gone, the hook before the reload, and pf asked
     os.makedirs(box.fake + '/usr/local/opnsense/scripts/trafficpriority/__pycache__', exist_ok=True)
     box.write(box.fake + '/var/db/os-trafficpriority/hardware.json', '{}')
+    box.write(box.fake + '/var/db/os-xgs-npu/switch-qos.json', '{\n "owner": "os-trafficpriority"\n}\n')
     box.python()
     box.forget()
     rc, out = box.run('install/uninstall.sh')
@@ -242,6 +243,8 @@ with tempfile.TemporaryDirectory() as tmp:
           box.called(), ['python3 trafficpriority/apply.py clear', 'service configd restart',
                          'configctl filter reload skip_alias hook=no', 'pfctl -s rules'])
     check('uninstall.sh: what the page kept of the switch gone', os.path.exists(box.fake + '/var/db/os-trafficpriority'), False)
+    check('uninstall.sh: the switch\'s settings file of this plugin gone, whatever the put-back did',
+          os.path.exists(box.fake + '/var/db/os-xgs-npu/switch-qos.json'), False)
     check('uninstall.sh: pf holds none of its rules - said, and done', (rc, 'none of its rules is left' in out), (0, True))
 
     # uninstall.sh when pf still holds rules of it: said, and exit 1
@@ -290,10 +293,21 @@ with tempfile.TemporaryDirectory() as tmp:
     rc, out = box.run('pkg/post-deinstall.sh')
     check('post-deinstall.sh: the switch put back through os-xgs-npu\'s tool, the settings file being the plugin\'s',
           (box.called()[:1], os.path.exists(box.fake + '/var/db/os-trafficpriority')), (['python3 xgs/switch_qos.py clear'], False))
+    # a put-back that fails: said, and the settings file removed all the same
+    box.write(settings, '{\n "classes": [],\n "owner": "os-trafficpriority"\n}\n')
+    box.write(box.fake + '/usr/local/bin/python3', '#!/bin/sh\necho "python3 $(basename $(dirname $1))/$(basename $1) '
+              '$2" >> %s\nexit 1\n' % box.calls, 0o755)
+    box.forget()
+    rc, out = box.run('pkg/post-deinstall.sh')
+    check('post-deinstall.sh: a put-back that fails said, the settings file removed all the same',
+          ('not all put back' in out, os.path.exists(settings), 'settings file of Traffic Priority removed' in out),
+          (True, False, True))
+    box.python()
     box.write(settings, '{\n "owner": "os-something"\n}\n')
     box.forget()
     box.run('pkg/post-deinstall.sh')
-    check('post-deinstall.sh: another plugin\'s settings file left alone', [c for c in box.called() if c.startswith('python3')], [])
+    check('post-deinstall.sh: another plugin\'s settings file left alone', ([c for c in box.called() if c.startswith('python3')],
+                                                                       os.path.exists(settings)), ([], True))
     os.remove(settings)
     os.remove(box.fake + '/usr/local/opnsense/scripts/xgs/switch_qos.py')
     box.forget()

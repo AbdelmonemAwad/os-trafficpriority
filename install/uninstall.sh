@@ -9,10 +9,17 @@
 # its mark until it ends: pf fixed it in the connection's state, and nothing here cuts a connection.
 
 # The switch's queues this plugin asked os-xgs-npu for, put back as found - its own alone, through
-# os-xgs-npu's switch tool - while apply.py is still here; nothing where there are none.
+# os-xgs-npu's switch tool - while apply.py is still here; nothing where there are none. Its settings
+# file for the switch goes whatever that does, so that nothing - the boot hook either - sets them again;
+# what could not be put back stays in os-xgs-npu's state, for its boot hook to put back, and is said.
+Q=/var/db/os-xgs-npu/switch-qos.json
 if [ -f /usr/local/opnsense/scripts/trafficpriority/apply.py ]; then
     /usr/local/bin/python3 /usr/local/opnsense/scripts/trafficpriority/apply.py clear > /dev/null 2>&1 || \
-        echo "the switch's queues of Traffic Priority were not put back: /usr/local/opnsense/scripts/xgs/switch_qos.py show, then clear"
+        echo "the switch's queues of Traffic Priority were not all put back: os-xgs-npu puts back the rest at the next boot of the coprocessor; /usr/local/opnsense/scripts/xgs/switch_qos.py show"
+fi
+if [ -f "${Q}" ] && grep -q '"owner": "os-trafficpriority"' "${Q}"; then
+    rm -f "${Q}"
+    echo "the switch's settings file of Traffic Priority removed"
 fi
 rm -rf /var/db/os-trafficpriority
 
