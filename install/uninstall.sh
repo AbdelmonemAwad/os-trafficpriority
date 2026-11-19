@@ -3,10 +3,18 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
 #
-# Remove the Traffic Priority plugin files. The classes' rules go with the filter reload run here,
-# because they are registered by the hook removed below, and the script says whether pf still holds
-# any of them. Kept: the settings in config.xml. A connection opened while a class marked it keeps
+# Remove the Traffic Priority plugin files. The switch's queues it set are put back first, and the
+# classes' rules go with the filter reload run here, because they are registered by the hook removed
+# below, and the script says whether pf still holds any of them. Kept: the settings in config.xml. A connection opened while a class marked it keeps
 # its mark until it ends: pf fixed it in the connection's state, and nothing here cuts a connection.
+
+# The switch's queues this plugin asked os-xgs-npu for, put back as found - its own alone, through
+# os-xgs-npu's switch tool - while apply.py is still here; nothing where there are none.
+if [ -f /usr/local/opnsense/scripts/trafficpriority/apply.py ]; then
+    /usr/local/bin/python3 /usr/local/opnsense/scripts/trafficpriority/apply.py clear > /dev/null 2>&1 || \
+        echo "the switch's queues of Traffic Priority were not put back: /usr/local/opnsense/scripts/xgs/switch_qos.py show, then clear"
+fi
+rm -rf /var/db/os-trafficpriority
 
 # the rules hook first, so the reload below is one without it
 rm -f /usr/local/etc/inc/plugins.inc.d/trafficpriority.inc
