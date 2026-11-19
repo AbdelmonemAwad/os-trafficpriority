@@ -2,13 +2,16 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
 """apply.py, the switch's queues set from the page's Apply, run as configd runs it, against config.xml
-files written here and a stand-in for os-xgs-npu's switch tool (switch_qos.py) that says what model
-this is, keeps the settings file it is given and answers as it is told. What is checked: the settings
-file written with this plugin's name and what hardware.py and shaper_map.py decide, and the tool asked
-to apply it; a refusal or a failure of the tool said on the page's terms, with the tool's own last
-line; Traffic Priority off, nothing left for the switch, the XGS 136 family - what this plugin set put
-back, and nothing of another plugin's touched or overwritten; nothing at all without os-xgs-npu;
-clear for the plugin's removal; and the outcome kept for the page.
+files and the rules file of a filter reload written here, and a stand-in for os-xgs-npu's switch tool
+(switch_qos.py) that says what model this is, keeps the settings file it is given and answers as it is
+told. What is checked: the settings file written with this plugin's name and what hardware.py and
+shaper_map.py decide from the places the rules file names, and the tool asked to apply it, "running"
+kept for the page while it does; a refusal or a failure of the tool said with the tool's own last line,
+a tool that runs out of time or says nothing said as such; Traffic Priority off, nothing left for the
+switch, a minimum beside a strict class, the XGS 136 family - what this plugin set put back, its settings
+file removed before the tool is asked, and nothing of another plugin's touched or overwritten; a rule set
+pf refused leaving the switch as it is; nothing at all without os-xgs-npu; clear for the plugin's
+removal; and the outcome kept for the page.
 
     python3 tools/test-apply.py"""
 import json
@@ -32,10 +35,10 @@ def check(name, got, want):
     print('%s %s%s' % ('ok  ' if ok else 'FAIL', name, '' if ok else ' - got %r, want %r' % (got, want)))
 
 
-# The switch tool: "can" answers model.json; "apply" and "clear" write down the call and what the
-# settings file held, and answer with answer.json's exit, stdout and stderr; clear removes the settings
-# file when it succeeds, as the real one does.
-TOOL = r'''import json, os, sys
+# The switch tool: "can" answers model.json; "apply" and "clear" write down the call, what the settings
+# file held then and what the page was told then, and answer with answer.json's exit, stdout and stderr,
+# after its sleep; clear removes the settings file when it succeeds, as the real one does first.
+TOOL = r'''import json, os, sys, time
 d = os.environ['FAKE_DIR']
 cmd = sys.argv[1]
 if cmd == 'can':
@@ -43,28 +46,44 @@ if cmd == 'can':
     sys.exit(0)
 settings = os.environ['TP_SWITCH_SETTINGS']
 held = open(settings).read() if os.path.exists(settings) else None
+told = json.load(open(os.environ['TP_RESULT'])).get('status') if os.path.exists(os.environ['TP_RESULT']) else None
 with open(os.path.join(d, 'calls'), 'a') as f:
-    f.write(json.dumps([cmd, json.loads(held) if held else None]) + '\n')
+    f.write(json.dumps([cmd, json.loads(held) if held else None, told]) + '\n')
 answer = json.load(open(os.path.join(d, 'answer.json'))) if os.path.exists(os.path.join(d, 'answer.json')) else {}
-if cmd == 'clear' and answer.get('rc', 0) == 0 and os.path.exists(settings):
+time.sleep(answer.get('sleep', 0))
+if cmd == 'clear' and os.path.exists(settings):
     os.remove(settings)
 sys.stdout.write(answer.get('out', ''))
 sys.stderr.write(answer.get('err', ''))
 sys.exit(answer.get('rc', 0))
 '''
 
-XGS3300 = {'family': 'octeontx', 'writes': True, 'why': '', 'entries': 2, 'ports': ['Port1', 'Port2'],
-           'devices': {'oxp2': 'Port1', 'oxp3': 'Port2'}}
-XGS136 = {'family': 'armada', 'writes': False, 'why': 'read-only', 'entries': 2, 'ports': [], 'devices': {}}
+XGS3300 = {'assembly': 'AMDA0202-0004', 'family': 'octeontx', 'writes': True, 'why': '', 'entries': 2,
+           'ports': ['Port1', 'Port2'], 'devices': {'oxp2': 'Port1', 'oxp3': 'Port2'}}
+XGS136 = {'assembly': 'AMDA0201-0003', 'family': 'armada', 'writes': False, 'why': 'read-only', 'entries': 2,
+          'ports': [], 'devices': {}}
+U = '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a0%d'
 
 
 def config(on='1', classes=(('46', ''),), follow='0', shaper=''):
-    body = ''.join('<class uuid="6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a0%d"><enabled>1</enabled><sequence>%d</sequence>'
-                   '<dscp>%s</dscp><minimum>%s</minimum><ipprotocol>inet</ipprotocol></class>' % (i, 100 + i, d, m)
+    body = ''.join('<class uuid="%s"><enabled>1</enabled><sequence>%d</sequence>'
+                   '<dscp>%s</dscp><minimum>%s</minimum><ipprotocol>inet</ipprotocol></class>' % (U % i, 100 + i, d, m)
                    for i, (d, m) in enumerate(classes))
     return ('<?xml version="1.0"?><opnsense><interfaces><wan><if>oxp3</if></wan></interfaces><OPNsense>'
             '<TrafficPriority><general><enabled>%s</enabled><follow_shaper>%s</follow_shaper></general><classes>%s'
             '</classes></TrafficPriority>%s</OPNsense></opnsense>' % (on, follow, body, shaper))
+
+
+def rules(classes=(('46', ''),)):
+    """The rules file as the hook writes it for these classes on an XGS 3300: each place's DSCP taken off
+    other traffic first - the first two above Best Effort - then the classes' own."""
+    places = []
+    for d, _ in classes:
+        if int(d) not in (0, 1, 8) and int(d) not in places and len(places) < 2:
+            places.append(int(d))
+    return ''.join('match in inet tos 0x%02x scrub ( set-tos 0x00 ) label "trafficpriority-clear-%d"\n' % (d << 2, d)
+                   for d in places) + ''.join('match in on igb1 inet scrub ( set-tos 0x%02x ) label "trafficpriority-%s"\n'
+                                              % (int(d) << 2, U % i) for i, (d, _) in enumerate(classes))
 
 
 SHAPER = ('<TrafficShaper><pipes><pipe uuid="p1"><enabled>1</enabled><bandwidth>100</bandwidth>'
@@ -81,13 +100,17 @@ with tempfile.TemporaryDirectory() as tmp:
     paths = {'TP_CONFIG': os.path.join(tmp, 'config.xml'), 'TP_SWITCH_TOOL': tool,
              'TP_SWITCH_SETTINGS': os.path.join(tmp, 'db', 'switch-qos.json'),
              'TP_SWITCH_STATE': os.path.join(tmp, 'db', 'switch-qos.state'),
-             'TP_RESULT': os.path.join(tmp, 'tp', 'hardware.json'), 'TP_PROJECT': os.path.join(tmp, 'XGS.xml')}
-    env = dict(os.environ, TP_PYTHON=sys.executable, FAKE_DIR=tmp, **paths)
+             'TP_RESULT': os.path.join(tmp, 'tp', 'hardware.json'), 'TP_PROJECT': os.path.join(tmp, 'XGS.xml'),
+             'TP_RULES': os.path.join(tmp, 'rules.debug'), 'TP_RULES_ERROR': os.path.join(tmp, 'rules.error')}
+    env = dict(os.environ, TP_PYTHON=sys.executable, FAKE_DIR=tmp, TP_SWITCH_TIMEOUT='3', **paths)
 
-    def given(text=None, model=XGS3300, answer=None):
+    def given(text=None, model=XGS3300, answer=None, ruled=None):
         if text is not None:
             with open(paths['TP_CONFIG'], 'w', encoding='utf-8') as handle:
                 handle.write(text)
+        if ruled is not None:
+            with open(paths['TP_RULES'], 'w', encoding='utf-8') as handle:
+                handle.write(ruled)
         with open(os.path.join(tmp, 'model.json'), 'w', encoding='utf-8') as handle:
             handle.write(json.dumps(model))
         a = os.path.join(tmp, 'answer.json')
@@ -126,27 +149,63 @@ with tempfile.TemporaryDirectory() as tmp:
             return json.load(handle)
 
     # set
-    given(config(classes=(('46', ''), ('34', '30'))))
+    both = (('46', ''), ('34', ''))
+    given(config(classes=both), ruled=rules(both))
     check('Apply: ok, applied', run(), {'status': 'ok', 'message': 'applied'})
     want = {'owner': 'os-trafficpriority', 'classes': [{'dscp': 46, 'mask': 63, 'queue': 7},
                                                         {'dscp': 34, 'mask': 63, 'queue': 6}],
-            'scheduling': {'*': 1}, 'limits': {}}
-    got = settings()
-    check('the settings file: this plugin\'s, EF strict in 7, AF41 weighted in 6, the ports strict for 7',
-          {k: v for k, v in got.items() if k != 'weights'}, want)
-    check('the settings file: 30 turns of AF41\'s queue against 70 for the rest',
-          (got['weights'].count(6), got['weights'].count(0)), (30, 70))
-    check('the switch tool asked to apply what the file held, once', calls(), [['apply', got]])
-    check('the outcome kept for the page', (result()['status'], result()['why_not'], result()['conf']), ('applied', '', got))
+            'scheduling': {'*': 2}, 'limits': {}}
+    check('the settings file: this plugin\'s, the two places of the rules file strict in 7 and 6, the ports strict '
+          'for both', settings(), want)
+    check('the switch tool asked to apply what the file held, once, the page told it runs meanwhile', calls(),
+          [['apply', want, 'running']])
+    check('the outcome kept for the page', (result()['status'], result()['why_not'], result()['conf']), ('applied', '', want))
+    mins = (('46', '20'), ('34', '30'))
+    given(config(classes=mins), ruled=rules(mins))
+    run()
+    check('minimums: all weighted, 20 and 30 turns against 50 for the rest',
+          (settings()['scheduling'], settings()['weights'].count(7), settings()['weights'].count(6),
+           settings()['weights'].count(0)), ({'*': 0}, 20, 30, 50))
+    # the places are the rules file's: a class the last filter reload gave no place has none
+    given(config(classes=both), ruled=rules((('46', ''),)))
+    run()
+    check('the switch given only what the rules file places', settings()['classes'], [{'dscp': 46, 'mask': 63, 'queue': 7}])
 
-    # the tool refuses or fails
-    given(answer={'rc': 1, 'err': 'TCAM entry 3 is in use by something else (page 0 keys 0xc000 0x0000): nothing written\n'})
+    # the tool refuses, fails, runs out of time, says nothing
+    given(config(), ruled=rules(), answer={'rc': 1, 'err': 'TCAM entry 3 is in use by something else (page 0 keys '
+                                                         '0xc000 0x0000): nothing written\n'})
     check('a refusal of the tool: failed, with its own words', run(),
           {'status': 'failed', 'message': 'TCAM entry 3 is in use by something else (page 0 keys 0xc000 0x0000): nothing written'})
     check('...kept for the page', (result()['status'], result()['said'][:12]), ('failed', 'TCAM entry 3'))
+    given(answer={'sleep': 6})
+    check('a tool that runs out of time: said so', run(), {'status': 'failed',
+                                                           'message': 'the switch tool did not finish within 3 s'})
+    given(answer={'rc': 1})
+    check('a tool that ends without a word: said so', run()['message'], 'the switch tool ended (exit 1) without a word')
+
+    # a minimum beside a strict class: nothing for the switch, what was set put back, why said
+    given(config(), ruled=rules())
+    run()
+    mixed = (('46', ''), ('34', '30'))
+    given(config(classes=mixed), ruled=rules(mixed))
+    check('a minimum beside a strict class: refused, what was set put back - the settings file gone before the tool '
+          'was asked', (run(), calls(), settings()), ({'status': 'failed', 'message': 'mix'}, [['clear', None, 'running']], None))
+    check('...the page told why', (result()['status'], result()['refused']), ('refused', 'mix'))
+
+    # a rule set pf refused: the switch left as it is
+    given(config(), ruled=rules())
+    run()
+    with open(paths['TP_RULES_ERROR'], 'w', encoding='utf-8') as handle:
+        handle.write('There were error(s) loading the rules')
+    before = settings()
+    given()
+    check('pf refused the last rule set: nothing asked of the switch, said', (run()['status'], calls(), settings()),
+          ('failed', [], before))
+    check('...kept for the page', (result()['status'], result()['refused']), ('refused', 'rules'))
+    os.remove(paths['TP_RULES_ERROR'])
 
     # Firewall: Shaper followed
-    given(config(follow='1', shaper=SHAPER))
+    given(config(follow='1', shaper=SHAPER), ruled=rules())
     run()
     check('Firewall: Shaper followed: a rule taking everything out of WAN limits Port2', settings()['limits'],
           {'Port2': 100000})
@@ -154,20 +213,25 @@ with tempfile.TemporaryDirectory() as tmp:
     run()
     check('...not followed: no limit', settings()['limits'], {})
 
-    # off: what this plugin set put back
+    # off: what this plugin set put back, the settings file removed first
     given(config(on='0'))
-    check('Traffic Priority off: what it set put back', (run(), [c[0] for c in calls()], settings()),
-          ({'status': 'ok', 'message': 'cleared'}, ['clear'], None))
+    check('Traffic Priority off: what it set put back, the settings file gone before the tool was asked',
+          (run(), calls(), settings()), ({'status': 'ok', 'message': 'cleared'}, [['clear', None, 'running']], None))
     check('...and the page told', (result()['status'], result()['why_not'], result()['conf']), ('cleared', 'plugin-off', None))
     given()
     check('off again, nothing of its own left: the tool not asked', (run(), calls()), ({'status': 'ok', 'message': 'nothing'}, []))
+    given(config(), ruled=rules())
+    run()
+    given(config(on='0'), answer={'rc': 1, 'err': 'not read back as written: Port5 (switch port 5) scheduling 0\n'})
+    check('a put-back that fails: said, and the settings file gone all the same - nothing sets it again',
+          (run()['status'], settings(), result()['status']), ('failed', None, 'failed'))
 
     # nothing for the switch: Best Effort alone
-    given(config(classes=(('0', ''),)))
+    given(config(classes=(('0', ''),)), ruled=rules((('0', ''),)), answer={})
     check('nothing for the switch: nothing asked of it', (run()['status'], calls()), ('ok', []))
 
     # the XGS 136 family: read only
-    given(config(), model=XGS3300)
+    given(config(), ruled=rules(), model=XGS3300)
     run()
     given(model=XGS136)
     check('the XGS 136 family: what this plugin set elsewhere put back, nothing written',
@@ -187,7 +251,7 @@ with tempfile.TemporaryDirectory() as tmp:
     os.remove(paths['TP_SWITCH_SETTINGS'])
 
     # without os-xgs-npu: nothing at all; an os-xgs-npu without the switch tool said as such
-    given(config())
+    given(config(), ruled=rules())
     os.rename(tool, tool + '.gone')
     check('no os-xgs-npu: nothing asked, nothing written, the page told', (run()['status'], settings(),
                                                                           result()['why_not']), ('ok', None, 'no-project'))
@@ -199,16 +263,16 @@ with tempfile.TemporaryDirectory() as tmp:
     os.rename(tool + '.gone', tool)
 
     # clear, at the plugin's removal
-    given(config())
+    given(config(), ruled=rules())
     run()
-    check('clear: its own put back, the outcome gone', (run('clear'), [c[0] for c in calls()][-1],
-                                                        os.path.exists(paths['TP_RESULT'])),
-          ({'status': 'ok', 'message': 'cleared'}, 'clear', False))
+    check('clear: its own put back, the settings file gone first, the outcome gone',
+          (run('clear'), calls()[-1], os.path.exists(paths['TP_RESULT'])),
+          ({'status': 'ok', 'message': 'cleared'}, ['clear', None, 'applied'], False))
     given(answer={'rc': 0})
     check('clear with nothing of its own: nothing asked', (run('clear')['status'], calls()), ('ok', []))
 
     # plan: what Apply would set, nothing written
-    given(config(classes=(('46', '25'),)))
+    given(config(classes=(('46', '25'),)), ruled=rules((('46', '25'),)))
     plan = run('plan')
     check('plan: the decision, nothing asked or written', (plan['conf']['classes'], calls(), settings()),
           ([{'dscp': 46, 'mask': 63, 'queue': 7}], [], None))

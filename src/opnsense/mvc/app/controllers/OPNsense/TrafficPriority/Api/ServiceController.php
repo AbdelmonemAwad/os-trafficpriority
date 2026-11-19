@@ -17,11 +17,17 @@ class ServiceController extends ApiControllerBase
     /**
      * status.py's answer, and whether this OPNsense writes the mark at all: with no FilterRule key for
      * it the rules hook applies no class (Marking::markKey()), and the page says so rather than that
-     * nothing was applied yet.
+     * nothing was applied yet. The page's cards ask it with the switch read again (status.py check:
+     * entries 3 and 255 and port 0's mode, when the last Apply set them); the grids without.
      */
     public function statusAction()
     {
-        $result = json_decode((string)(new Backend())->configdRun('trafficpriority status'), true);
+        return $this->status(true);
+    }
+
+    protected function status($check)
+    {
+        $result = json_decode((string)(new Backend())->configdRun('trafficpriority status' . ($check ? ' check' : '')), true);
         if (!is_array($result)) {
             return ['error' => gettext('Status could not be read.')];
         }
@@ -38,7 +44,7 @@ class ServiceController extends ApiControllerBase
      */
     public function searchAppliedAction()
     {
-        $status = $this->statusAction();
+        $status = $this->status(false);
         $key = $this->markKey();
         $seen = [];
         foreach (($status['classes'] ?? []) as $row) {
@@ -83,7 +89,7 @@ class ServiceController extends ApiControllerBase
      */
     public function searchShaperAction()
     {
-        $status = $this->statusAction();
+        $status = $this->status(false);
         $rows = [];
         foreach (($status['hardware']['shaper'] ?? []) as $row) {
             if (!is_array($row) || !isset($row['uuid'])) {
@@ -108,7 +114,9 @@ class ServiceController extends ApiControllerBase
      * (plugins.inc.d/trafficpriority.inc) registers the classes' rules - the aliases are not reloaded,
      * nothing of theirs changed - and then the switch's queues set (scripts/trafficpriority/apply.py,
      * through os-xgs-npu's switch tool where there is one, and put back as found with Traffic Priority
-     * off). A switch that could not be set is said; pf's rules are loaded either way.
+     * off), in the background: the switch's reads and writes take seconds to a minute over the
+     * coprocessor's link, and no request waits on them. What it did, and while it runs that it runs, is
+     * in status.py's answer, which the page reads.
      */
     public function reconfigureAction()
     {
@@ -120,11 +128,7 @@ class ServiceController extends ApiControllerBase
         if (strpos($out, 'OK') !== 0) {
             return ['status' => 'failed', 'status_msg' => gettext('Filter reload did not finish.') . ' ' . $out];
         }
-        $switch = json_decode((string)$backend->configdRun('trafficpriority apply'), true);
-        if (!is_array($switch) || ($switch['status'] ?? '') !== 'ok') {
-            return ['status' => 'failed', 'status_msg' => gettext('The rules are loaded, but the switch queues were not set:') .
-                ' ' . (is_array($switch) ? (string)($switch['message'] ?? '') : '')];
-        }
+        $backend->configdRun('trafficpriority apply', true);
         return ['status' => 'ok'];
     }
 
