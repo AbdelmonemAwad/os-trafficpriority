@@ -123,9 +123,14 @@ namespace {
         require $lib . '/' . $class . '.php';
     }
     require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Marking.php';
+    require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Hardware.php';
     require $root . '/src/etc/inc/plugins.inc.d/trafficpriority.inc';
 
+    use OPNsense\TrafficPriority\Hardware;
     use OPNsense\TrafficPriority\Marking;
+
+    /* no switch tool here unless a test says so */
+    Hardware::$tool = false;
 
     $failed = 0;
     $checks = 0;
@@ -473,6 +478,52 @@ namespace {
         check(pf_shape($line), "pfctl's shape: $line");
     }
 
+    /*
+     * The switch's places (Hardware): on an XGS 3300 with os-xgs-npu's switch tool, each place's DSCP is
+     * taken off every other connection by a rule of its own, before every class's rule - so that pf,
+     * keeping the last match rule's mark, leaves the DSCP on the classes' connections alone.
+     */
+    Hardware::$tool = true;
+    Hardware::$serial = 'X AMDA0202-0004 Y';
+    $placed = render(cfg([cls(U1, ['description' => 'Voice', 'sequence' => '100']),
+        cls(U2, ['description' => 'Video', 'sequence' => '200', 'dscp' => '34']),
+        cls(U3, ['description' => 'Scavenger', 'sequence' => '10', 'dscp' => '8'])]));
+    $mine = ours($placed);
+    $clear = array_values(array_filter($mine, function ($l) {
+        return strpos($l, 'label "trafficpriority-clear-') !== false;
+    }));
+    check(count($clear) === 2 && strpos($clear[0], 'trafficpriority-clear-46"') !== false &&
+        strpos($clear[1], 'trafficpriority-clear-34"') !== false,
+        'the two places, EF and AF41 in the order of the page, each a rule; CS1, below Best Effort, none: ' . json_encode($clear));
+    $last_clear = max(array_keys(array_intersect($mine, $clear)));
+    $first_class = min(array_keys(array_diff($mine, $clear)));
+    check(count($mine) === 5 && $last_clear < $first_class,
+        'the rules that take the DSCPs of the places off other traffic come before the rule of every class, whose mark pf keeps');
+    $clear_shape = '/^match in inet from \{any\} to \{any\}( tos 0xb8)? scrub \( set-tos 0x00 \)( tos 0xb8)? ' .
+        'label "trafficpriority-clear-46" # Traffic Priority: DSCP 46 taken off other traffic$/';
+    check(preg_match($clear_shape, $clear[0] ?? '') === 1 && substr_count($clear[0], 'tos 0xb8') === 1 &&
+        strpos($clear[0], ' on ') === false && strpos($clear[0], ' quick') === false,
+        'the rule: every interface, IPv4, connections opening with EF set to 0, not quick: ' . ($clear[0] ?? '-'));
+    /* a class making no rule (Marking::problem()) takes no place; the next DSCP does */
+    $nothing = ours(render(cfg([cls(U1, ['interface' => '']), cls(U2, ['dscp' => '34', 'sequence' => '200'])])));
+    check(count($nothing) === 2 && strpos($nothing[0], 'trafficpriority-clear-34"') !== false,
+        'a class that narrows nothing - no rule - has no place; AF41 has: ' . json_encode($nothing));
+    /* Best Effort and IPv6 alone: no place */
+    check(count(array_filter(ours(render(cfg([cls(U1, ['dscp' => '0']), cls(U2, ['ipprotocol' => 'inet6', 'dscp' => '34'])]))),
+        function ($l) {
+            return strpos($l, 'trafficpriority-clear-') !== false;
+        })) === 0, 'Best Effort and a class marking IPv6 alone: no place, no rule taking a DSCP off');
+    /* not the XGS 3300, or no switch tool: nothing taken off */
+    Hardware::$serial = 'X AMDA0201-0003 Y';
+    check(strpos(implode("
+", ours(render(cfg([cls(U1)])))), 'trafficpriority-clear-') === false,
+        'the XGS 136: no rule taking a DSCP off - the switch is not set there');
+    Hardware::$serial = 'X AMDA0202-0004 Y';
+    Hardware::$tool = false;
+    check(strpos(implode("
+", ours(render(cfg([cls(U1)])))), 'trafficpriority-clear-') === false,
+        'no os-xgs-npu switch tool: no rule taking a DSCP off');
+    Hardware::$serial = null;
     /* the key that writes the mark */
     check(Marking::markKey() === ($hasScrub ? 'scrub' : 'dn'), "this OPNsense's key: " . Marking::markKey());
     check(Marking::markKey(['scrub' => 'parseScrub', 'dn' => 'parsePlain']) === 'scrub', 'a FilterRule with scrub: scrub');

@@ -37,15 +37,19 @@ class TrafficPriority extends BaseModel
             }
             /*
              * A minimum is held by the switch's weighted queues (Hardware): only on a class with one of
-             * its two places, and the minimums of the classes switched on add up to 100 at most. A class
-             * switched off holds none, and is not refused for one.
+             * its two places; the minimums of the classes switched on add up to 100 at most; and not
+             * beside a class with a place and no minimum, which would be strict and go before it. A
+             * class switched off holds none, and is not refused for one.
              */
             if (Hardware::minimum((string)$class->minimum) !== null && $places[(string)$uuid] !== 'off') {
                 if ($places[(string)$uuid] !== 'hardware') {
-                    self::refuse($messages, $class->minimum, gettext('A minimum is held by the switch queues, which take the first two DSCPs in the order of the list - IPv4, not Best Effort. The DSCP of this class is not one of them.'));
+                    self::refuse($messages, $class->minimum, gettext('A minimum is held by the switch queues, which take the first two DSCPs in the order of the list - classes that mark IPv4 above Best Effort and make a rule. The DSCP of this class is not one of them.'));
                 } elseif (Hardware::total($all) > 100) {
                     self::refuse($messages, $class->minimum, gettext('The minimums of the classes switched on would add up to more than 100 percent.'));
                 }
+            }
+            if ($places[(string)$uuid] === 'hardware' && Hardware::mixed($all)) {
+                self::refuse($messages, $class->minimum, gettext('A minimum cannot be kept beside a strict class: give each class with a switch queue a minimum, or none.'));
             }
             $values = [];
             foreach (Marking::FIELDS as $field) {
