@@ -22,6 +22,8 @@ name: checks
 # refuses the whole rule set for one bad rule, every rule of the owner's with it, so the
 # rules are written out here by OPNsense's own classes - of 26.7, which has no key of its
 # own for pf's scrub options, and of 26.7.9, which has - and checked against pfctl's grammar.
+# And what the switch of an XGS appliance is given: the classes' queues, their minimums and
+# what of Firewall: Shaper the switch can follow, decided here and set by os-xgs-npu.
 
 on:
   push:
@@ -90,6 +92,24 @@ jobs:
       # status.py's reading of the rules pf was given and of pf's own counters, by each class's label.
       - name: The page says what pf holds of each class
         run: python3 tools/test-status.py
+
+      # hardware.py: which classes have a place in an XGS appliance's switch queues - two DSCPs, in the
+      # page's order - which queue each takes, strict or weighted, the ports' scheduling, and the chip's
+      # one weight sequence from the minimums: each queue its share of turns, every queue at least one.
+      - name: The classes in the switch's queues, and their minimums
+        run: python3 tools/test-hardware.py
+
+      # shaper_map.py: Firewall: Shaper's pipes, queues and rules, read and never written, followed into
+      # the switch where it can do what a rule does - a pipe's bandwidth as a front port's egress limit, a
+      # queue's weight as a part of every port for a DSCP a class marks - and for every other rule why it
+      # stays with the host.
+      - name: "Firewall: Shaper followed, rule by rule"
+        run: python3 tools/test-shaper-map.py
+
+      # apply.py with a stand-in for os-xgs-npu's switch tool: the settings file written and applied, a
+      # refusal said, what the plugin set put back when it is off or removed, another plugin's left alone.
+      - name: The switch set from Apply, and put back
+        run: python3 tools/test-apply.py
 
       # install/install.sh copies src/ whole; install/uninstall.sh names what it removes.
       - name: Every file the installer lays down is removed by the uninstaller
