@@ -22,9 +22,30 @@ class TrafficPriority extends BaseModel
     public function performValidation($validateFullModel = false)
     {
         $messages = parent::performValidation($validateFullModel);
-        foreach ($this->classes->class->iterateItems() as $class) {
+        /* every class, for what a minimum depends on: the others' order, DSCPs and minimums */
+        $all = [];
+        foreach ($this->classes->class->iterateItems() as $uuid => $class) {
+            $all[(string)$uuid] = [];
+            foreach (array_merge(Marking::FIELDS, ['minimum']) as $field) {
+                $all[(string)$uuid][$field] = (string)$class->$field;
+            }
+        }
+        $places = Hardware::places($all);
+        foreach ($this->classes->class->iterateItems() as $uuid => $class) {
             if (!$validateFullModel && !$class->isFieldChanged()) {
                 continue;
+            }
+            /*
+             * A minimum is held by the switch's weighted queues (Hardware): only on a class with one of
+             * its two places, and the minimums of the classes switched on add up to 100 at most. A class
+             * switched off holds none, and is not refused for one.
+             */
+            if (Hardware::minimum((string)$class->minimum) !== null && $places[(string)$uuid] !== 'off') {
+                if ($places[(string)$uuid] !== 'hardware') {
+                    self::refuse($messages, $class->minimum, gettext('A minimum is held by the switch queues, which take the first two DSCPs in the order of the list - IPv4, not Best Effort. The DSCP of this class is not one of them.'));
+                } elseif (Hardware::total($all) > 100) {
+                    self::refuse($messages, $class->minimum, gettext('The minimums of the classes switched on would add up to more than 100 percent.'));
+                }
             }
             $values = [];
             foreach (Marking::FIELDS as $field) {

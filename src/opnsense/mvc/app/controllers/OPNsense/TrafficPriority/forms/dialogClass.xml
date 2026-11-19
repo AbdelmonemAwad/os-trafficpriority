@@ -93,4 +93,14 @@
         <type>dropdown</type>
         <help>DSCP pf writes into every packet of this class's connections, both ways, their two ECN bits left as they came. EF (46) is the usual mark for voice. A mark is fixed when a connection opens: a change reaches new connections. Firewall: Shaper probably sees the mark on uploads only, not measured: pf writes it as a packet comes in on the class's interface, and on a reply as it leaves by it, so a download arriving on the WAN still carries the DSCP it came with.</help>
     </field>
+    <field>
+        <id>class.minimum</id>
+        <label>Minimum</label>
+        <type>text</type>
+        <hint>none: strict</hint>
+        <help>On an XGS appliance whose switch os-xgs-npu sets: the part of a full port, in percent, this class's switch queue gets at least. Without one the class is strict, served before everything else, and can take a whole port; with one its queue is weighted and the rest of the port keeps what is left. The switch has one set of weights for every port in weighted mode, the coprocessor's own uplink among them, so the part is the same on each. Only the first two DSCPs in the list's order have a queue of their own, and the minimums of the classes switched on add up to 100 at most. Not measured yet: whether the switch shares a port by frames or by bytes.</help>
+        <grid_view>
+            <visible>false</visible>
+        </grid_view>
+    </field>
 </form>
