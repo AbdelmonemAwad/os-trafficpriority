@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory() as tmp:
     paths = {'TP_CONFIG': os.path.join(tmp, 'config.xml'), 'TP_SWITCH_TOOL': tool,
              'TP_SWITCH_SETTINGS': os.path.join(tmp, 'db', 'switch-qos.json'),
              'TP_SWITCH_STATE': os.path.join(tmp, 'db', 'switch-qos.state'),
-             'TP_RESULT': os.path.join(tmp, 'tp', 'hardware.json')}
+             'TP_RESULT': os.path.join(tmp, 'tp', 'hardware.json'), 'TP_PROJECT': os.path.join(tmp, 'XGS.xml')}
     env = dict(os.environ, TP_PYTHON=sys.executable, FAKE_DIR=tmp, **paths)
 
     def given(text=None, model=XGS3300, answer=None):
@@ -186,11 +186,16 @@ with tempfile.TemporaryDirectory() as tmp:
     check('...nor cleared with Traffic Priority off', (run()['status'], calls(), settings()), ('ok', [], other))
     os.remove(paths['TP_SWITCH_SETTINGS'])
 
-    # without os-xgs-npu: nothing at all
+    # without os-xgs-npu: nothing at all; an os-xgs-npu without the switch tool said as such
     given(config())
     os.rename(tool, tool + '.gone')
     check('no os-xgs-npu: nothing asked, nothing written, the page told', (run()['status'], settings(),
                                                                           result()['why_not']), ('ok', None, 'no-project'))
+    with open(paths['TP_PROJECT'], 'w', encoding='utf-8') as handle:
+        handle.write('<model/>')
+    check('an os-xgs-npu without the switch tool: said', (run()['status'], settings(), result()['why_not']),
+          ('ok', None, 'no-tool'))
+    os.remove(paths['TP_PROJECT'])
     os.rename(tool + '.gone', tool)
 
     # clear, at the plugin's removal

@@ -113,6 +113,7 @@
         const switchNot = {
             'plugin-off': "{{ lang._('Traffic Priority is off') }}",
             'no-project': "{{ lang._('no switch here: pf alone marks') }}",
+            'no-tool': "{{ lang._('this os-xgs-npu sets no switch queue yet: update it') }}",
             'read-only': "{{ lang._('not applied on this model yet: os-xgs-npu only reads its switch') }}",
             'no-switch': "{{ lang._('no switch os-xgs-npu knows on this model') }}",
             'follow-off': "{{ lang._('Follow Firewall: Shaper is off (General)') }}",

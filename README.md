@@ -306,16 +306,17 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   after them; the weight sequence, every queue at least one turn, 128 at most.
   `tools/test-shaper-map.py`, 44 checks: Firewall: Shaper configurations - pipes with a bandwidth and
   a mask, queues with weights, rules by interface, direction, addresses, ports and DSCP - and for each
-  rule what the switch takes and why the rest stays with the host. `tools/test-apply.py`, 21 checks:
+  rule what the switch takes and why the rest stays with the host. `tools/test-apply.py`, 22 checks:
   `apply.py` with a stand-in for os-xgs-npu's switch tool - the settings written and applied, a refusal
   said in the tool's words, what the plugin set put back when it is off, on the XGS 136 family or
-  removed, another plugin's settings neither overwritten nor cleared. And in `tools/test-mvc.php`, a
+  removed, another plugin's settings neither overwritten nor cleared, an os-xgs-npu without the
+  switch tool said as such. And in `tools/test-mvc.php`, a
   minimum refused at the save on a class without a place and past 100, the switch queue and the
   Firewall: Shaper tab on the page, and Apply setting the switch after the filter reload;
-- **the strings** - `tools/check-strings.py`: each of the 177 strings the GUI shows - the page, the
+- **the strings** - `tools/check-strings.py`: each of the 178 strings the GUI shows - the page, the
   dialog's labels, help and the DSCPs' names, the model's messages, the menu, the ACL and the PHP's -
   is listed in `source.json`. The first part's have their Arabic in opnsense-arabic (pull request
-  [#80](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/80), merged 2026-11-18); 55 of the
+  [#80](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/80), merged 2026-11-18); 56 of the
   second part's do not yet, and `tools/check-strings.py` lists them;
 - **the installation** - `tools/test-install.py`, 32 checks: `install/install.sh`,
   `install/uninstall.sh`, the package's `post-install.sh` and `post-deinstall.sh`, and

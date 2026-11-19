@@ -44,6 +44,8 @@ TOOL = os.environ.get('TP_SWITCH_TOOL', '/usr/local/opnsense/scripts/xgs/switch_
 SETTINGS = os.environ.get('TP_SWITCH_SETTINGS', '/var/db/os-xgs-npu/switch-qos.json')
 STATE = os.environ.get('TP_SWITCH_STATE', '/var/db/os-xgs-npu/switch-qos.state')
 RESULT = os.environ.get('TP_RESULT', '/var/db/os-trafficpriority/hardware.json')
+# os-xgs-npu's model: installed, but without the switch tool, it is an os-xgs-npu older than the tool
+PROJECT = os.environ.get('TP_PROJECT', '/usr/local/opnsense/mvc/app/models/OPNsense/XGS/XGS.xml')
 OWNER = 'os-trafficpriority'
 
 
@@ -75,13 +77,13 @@ def can():
 def decide(root, model):
     """What the switch is given, from config.xml's root element and what the switch tool says of this
     model: {'why_not', 'follow', 'plan', 'shaper', 'conf'}. why_not is '' when the switch is set, else
-    plugin-off, no-project (no os-xgs-npu), read-only (the XGS 136 family) or no-switch; conf is None
-    then."""
+    plugin-off, no-project (no os-xgs-npu), no-tool (an os-xgs-npu without the switch tool), read-only
+    (the XGS 136 family) or no-switch; conf is None then."""
     on, follow, classes = hardware.read_classes(root)
     if not on:
         why_not = 'plugin-off'
     elif model is None:
-        why_not = 'no-project'
+        why_not = 'no-tool' if os.path.exists(PROJECT) else 'no-project'
     elif not model.get('writes'):
         why_not = model.get('why') or 'no-switch'
     else:

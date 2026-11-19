@@ -175,5 +175,6 @@
  "the only queue of its pipe: its weight shares nothing",
  "the way in: the switch limits what leaves a port",
  "this OPNsense writes no mark on a rule",
+ "this os-xgs-npu sets no switch queue yet: update it",
  "written, not loaded"
 ]
