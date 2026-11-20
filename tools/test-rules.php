@@ -123,9 +123,14 @@ namespace {
         require $lib . '/' . $class . '.php';
     }
     require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Marking.php';
+    require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Hardware.php';
     require $root . '/src/etc/inc/plugins.inc.d/trafficpriority.inc';
 
+    use OPNsense\TrafficPriority\Hardware;
     use OPNsense\TrafficPriority\Marking;
+
+    /* no switch tool here unless a test says so */
+    Hardware::$tool = false;
 
     $failed = 0;
     $checks = 0;
@@ -473,6 +478,65 @@ namespace {
         check(pf_shape($line), "pfctl's shape: $line");
     }
 
+    /*
+     * The switch's places (Hardware): on an XGS 3300 with os-xgs-npu's switch tool, while a class has a
+     * place, one rule sets every IPv4 connection's DSCP to 0, both ways, before every class's rule - so
+     * that pf, keeping the last match rule's mark, leaves a DSCP on the classes' connections alone: the
+     * switch queues every frame by its DSCP, whoever marked it.
+     */
+    Hardware::$tool = true;
+    Hardware::$serial = 'X AMDA0202-0004 Y';
+    $clearing = function ($lines) {
+        return array_values(array_filter($lines, function ($l) {
+            return strpos($l, 'label "trafficpriority-clear') !== false;
+        }));
+    };
+    $mine = ours(render(cfg([cls(U1, ['description' => 'Voice', 'sequence' => '100']),
+        cls(U2, ['description' => 'Video', 'sequence' => '200', 'dscp' => '34']),
+        cls(U3, ['description' => 'Scavenger', 'sequence' => '10', 'dscp' => '8'])])));
+    $clear = $clearing($mine);
+    check(count($clear) === 1 && count($mine) === 4,
+        'two places, EF and AF41: one rule setting DSCP 0, not one for each, and the three classes\' own: ' .
+        json_encode($mine));
+    check(($mine[0] ?? '') === ($clear[0] ?? null),
+        'the rule setting DSCP 0 comes before the rule of every class, whose mark pf keeps: ' . json_encode($mine));
+    $one = $clear[0] ?? '';
+    $clear_shape = '/^match in inet from \{any\} to \{any\} scrub \( set-tos 0x00 \) label "trafficpriority-clear" ' .
+        '# Traffic Priority: DSCP set to 0 on every IPv4 connection no class marks$/';
+    /* the rule itself, its description (after " # ") aside */
+    $rule = (string)strstr($one, ' # ', true);
+    check(preg_match($clear_shape, $one) === 1 && strpos($rule, ' tos ') === false && strpos($rule, ' on ') === false &&
+        strpos($rule, ' quick') === false && strpos($rule, 'state') === false && strpos($rule, 'route-to') === false &&
+        strpos($rule, 'reply-to') === false,
+        'the rule: every interface, IPv4, every connection - no DSCP to match - its DSCP set to 0, not quick: ' . $one);
+    /* a third DSCP, and a class of IPv4 and IPv6: still the one rule, first, and IPv4's alone */
+    $three = ours(render(cfg([cls(U1), cls(U2, ['dscp' => '34', 'ipprotocol' => 'inet46']),
+        cls(U3, ['dscp' => '24'])])));
+    check(count($clearing($three)) === 1 && ($three[0] ?? '') === $one && count(array_filter($three, function ($l) {
+        return strpos($l, ' inet6 ') !== false && strpos($l, 'set-tos 0x00') !== false;
+    })) === 0, 'three DSCPs and a class of both versions: the one rule, first, none for IPv6 - the switch picks out ' .
+        'IPv4 alone: ' . json_encode($three));
+    /* a class making no rule (Marking::problem()) takes no place; the next DSCP does, and the rule comes */
+    $nothing = ours(render(cfg([cls(U1, ['interface' => '']), cls(U2, ['dscp' => '34', 'sequence' => '200'])])));
+    check(count($nothing) === 2 && $nothing[0] === $one,
+        'a class that narrows nothing - no rule - has no place; AF41 has, and the rule setting DSCP 0 comes first: ' .
+        json_encode($nothing));
+    /* no class with a place: no rule setting DSCP 0 */
+    check(count(ours(render(cfg([cls(U1, ['interface' => ''])])))) === 0,
+        'a class that makes no rule, alone: no place, and no rule setting DSCP 0 either');
+    $none = ours(render(cfg([cls(U1, ['dscp' => '0']), cls(U2, ['ipprotocol' => 'inet6', 'dscp' => '34']),
+        cls(U3, ['dscp' => '8'])])));
+    check(count($none) === 3 && count($clearing($none)) === 0,
+        'Best Effort, IPv6 alone and CS1: no place, so no rule setting DSCP 0 - the classes\' own alone: ' .
+        json_encode($none));
+    /* not the XGS 3300, or no switch tool: none */
+    Hardware::$serial = 'X AMDA0201-0003 Y';
+    check(count($clearing(ours(render(cfg([cls(U1)]))))) === 0,
+        'the XGS 136: no rule setting DSCP 0 - the switch is not set there');
+    Hardware::$serial = 'X AMDA0202-0004 Y';
+    Hardware::$tool = false;
+    check(count($clearing(ours(render(cfg([cls(U1)]))))) === 0, 'no os-xgs-npu switch tool: no rule setting DSCP 0');
+    Hardware::$serial = null;
     /* the key that writes the mark */
     check(Marking::markKey() === ($hasScrub ? 'scrub' : 'dn'), "this OPNsense's key: " . Marking::markKey());
     check(Marking::markKey(['scrub' => 'parseScrub', 'dn' => 'parsePlain']) === 'scrub', 'a FilterRule with scrub: scrub');

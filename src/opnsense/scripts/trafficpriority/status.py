@@ -8,19 +8,26 @@ What the page shows, as one JSON object: whether Traffic Priority is on and, for
 given for it at the last filter reload (/tmp/rules.debug) and what pf holds now (pfctl -v -s rules) -
 its rules, found by their label, and what pf counted for them since that reload; whether pf refused
 the rule set of that reload; how many connections pf holds now with a mark set coming in, each once,
-while a class marks (pfctl -v -s states, which shows that a mark is set, not which one); and whether
-os-xgs-npu is installed, whose drivers carry a connection's mark into hardware.
+while a class marks (pfctl -v -s states, which shows that a mark is set, not which one); whether
+os-xgs-npu is installed, whose drivers carry a connection's mark into hardware; and the switch's
+queues on an XGS appliance - what Apply gives the switch for the settings as they are now
+(apply.py's decision: each class's place, each rule of Firewall: Shaper with what the switch takes of
+it and what stays with the host), what the last Apply did, and whether the settings changed since.
 
     status.py
 
-Read only.
+Read only: the switch itself is not read (os-xgs-npu's switch_qos.py show reads it, by hand).
 """
 
 import json
 import os
 import re
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import apply  # noqa: E402
 
 CONFIG = '/conf/config.xml'
 PFCTL = '/sbin/pfctl'
@@ -172,7 +179,51 @@ def pf_show(what):
     return done.stdout if done.returncode == 0 else None
 
 
-def status(config=None, rules=None, pf_text=None, project=None, states=None, errors=None):
+def switch(config, model, result, rules=None, check=None):
+    """The switch's queues for the page: what Apply gives the switch now (apply.decide(), from the rules
+    file of the last filter reload), what the last Apply did (its result file) - shown whatever else is
+    said: a put-back or a set that failed, a refusal, a run still going - and whether the two differ,
+    pending. model is what os-xgs-npu's switch tool says of this appliance (apply.can()), None without
+    it. check, when given, is the switch tool's "check": whether entries 3 and 255, port 0's TCAM mode and
+    its pause still hold what Apply set - the coprocessor's network agent shares the TCAM's engine."""
+    decided = apply.decide(ET.parse(config or CONFIG).getroot(), model, apply.rules_text(rules))
+    try:
+        with open(result or apply.RESULT, encoding='utf-8') as handle:
+            last = json.load(handle)
+        if not isinstance(last, dict):
+            last = None
+    except (OSError, ValueError):
+        last = None
+    plan = decided['plan']
+    return {
+        'why_not': decided['why_not'],
+        'refused': decided['refused'],
+        'follow': decided['follow'],
+        'classes': plan['classes'],
+        'dscps': plan['dscps'],
+        'mode': plan['mode'],
+        'limits': (decided['conf'] or {}).get('limits', {}),
+        'shaper': decided['shaper'],
+        'last': {k: last.get(k) for k in ('status', 'said', 'time', 'refused')} if last else None,
+        'pending': (last or {}).get('status') != 'running' and (last or {}).get('conf') != decided['conf'],
+        'check': check,
+    }
+
+
+def check_switch():
+    """The switch tool's check, as JSON; None when it cannot be asked."""
+    got = apply.tool('check', '--json', timeout=90)
+    if got is None:
+        return None
+    try:
+        out = json.loads(got[1])
+    except ValueError:
+        return {'ok': False, 'changed': [], 'error': apply.last(got)}
+    return out if isinstance(out, dict) else None
+
+
+def status(config=None, rules=None, pf_text=None, project=None, states=None, errors=None, model=None, result=None,
+           check=None):
     read = settings(config)
     if read is None:
         return {'error': 'config.xml could not be read'}
@@ -195,12 +246,25 @@ def status(config=None, rules=None, pf_text=None, project=None, states=None, err
         'refused': refused(rules, errors),
         'marked': marked(states, marks),
         'project': os.path.exists(project or PROJECT),
+        'hardware': switch(config, model, result, rules, check),
     }
 
 
-def main():
-    print(json.dumps(status(pf_text=pf_show('rules'), states=pf_show('states'))))
+def main(argv):
+    """status.py [check]: with check, the switch is read too - a few reads of the switch tool's, made only
+    when the last Apply set it - for the page's cards; the grids ask without."""
+    model = apply.can()
+    checked = None
+    if argv == ['check'] and model is not None and model.get('writes'):
+        try:
+            with open(apply.RESULT, encoding='utf-8') as handle:
+                set_ = (json.load(handle) or {}).get('status') == 'applied'
+        except (OSError, ValueError, AttributeError):
+            set_ = False
+        if set_:
+            checked = check_switch()
+    print(json.dumps(status(pf_text=pf_show('rules'), states=pf_show('states'), model=model, check=checked)))
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])

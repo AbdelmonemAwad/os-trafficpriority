@@ -14,6 +14,11 @@
  * (OPNsense\TrafficPriority\Marking says what the rule is and why it is so). Off by default: nothing
  * is registered until Enabled is on and a class is applied.
  *
+ * On an XGS 3300 whose switch os-xgs-npu sets, while a class has a place in the switch's queues
+ * (OPNsense\TrafficPriority\Hardware), every IPv4 connection's DSCP is first set to 0, both ways - the
+ * switch queues every frame by its DSCP, whoever marked it - by one rule, registered before every
+ * class's rule, so that the classes' own marks come after it and are the ones their connections keep.
+ *
  * A hook that throws stops the filter reload: OPNsense calls it with nothing around it
  * (plugins.inc:244-259), and the reload is what loads every rule of the owner's. So nothing here may
  * throw: whatever goes wrong is said in the system log, and the reload goes on without the class it
@@ -21,6 +26,7 @@
  */
 
 use OPNsense\Firewall\Plugin;
+use OPNsense\TrafficPriority\Hardware;
 use OPNsense\TrafficPriority\Marking;
 
 function trafficpriority_firewall(Plugin $fw)
@@ -43,10 +49,21 @@ function trafficpriority_firewall(Plugin $fw)
             Marking::log(LOG_ERR, 'Traffic Priority: this OPNsense\'s FilterRule writes no pf scrub option; no class applied');
             return;
         }
+        $clearing = Hardware::switchInUse() ? Hardware::clearing(Hardware::dscps($classes), $key) : [];
         $classes = Marking::ordered($classes);
     } catch (\Throwable $e) {
         syslog(LOG_ERR, 'Traffic Priority: no class applied: ' . $e->getMessage());
         return;
+    }
+
+    /* while a class has a place, every IPv4 connection's DSCP set to 0 first; the classes' marks after it */
+    foreach ($clearing as $rule) {
+        try {
+            $fw->registerFilterRule(Marking::PRIORITY, $rule);
+        } catch (\Throwable $e) {
+            Marking::log(LOG_ERR, sprintf('Traffic Priority: "%s" left out of this filter reload: %s', $rule['descr'],
+                $e->getMessage()));
+        }
     }
 
     foreach ($classes as $uuid => $class) {

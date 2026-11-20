@@ -2,13 +2,32 @@
 # Copyright (C) 2026 Abdelmonem Awad <eg2@live.com>. BSD 2-Clause License.
 #
 # Run by pkg(8) after the files of os-trafficpriority have been removed; not during an upgrade. The
-# rules hook is gone with them, so a filter reload takes the classes' rules out of pf. Kept: the
+# switch's queues it set are put back, and the rules hook is gone with the files, so a filter reload
+# takes the classes' rules out of pf. Kept: the
 # settings in config.xml. A connection opened while a class marked it keeps its mark until it ends:
 # pf fixed it in the connection's state, and nothing here cuts a connection.
 
 if [ -x /usr/local/opnsense/scripts/firmware/register.php ]; then
 	/usr/local/opnsense/scripts/firmware/register.php remove os-trafficpriority > /dev/null 2>&1 || true
 fi
+
+# The switch's queues this plugin asked os-xgs-npu for, put back as found through os-xgs-npu's switch
+# tool - apply.py is gone with the package's files - when the settings file it keeps is this plugin's;
+# another plugin's is left alone. The file goes whatever the put-back does, so that nothing - the boot
+# hook either - sets them again; what could not be put back stays in os-xgs-npu's state, for its boot
+# hook to put back, and is said.
+Q=/var/db/os-xgs-npu/switch-qos.json
+if [ -f "${Q}" ] && grep -q '"owner": "os-trafficpriority"' "${Q}"; then
+	if [ -f /usr/local/opnsense/scripts/xgs/switch_qos.py ]; then
+		/usr/local/bin/python3 /usr/local/opnsense/scripts/xgs/switch_qos.py clear > /dev/null 2>&1 || \
+			echo "the switch's queues of Traffic Priority were not all put back: os-xgs-npu puts back the rest at the next boot of the coprocessor; /usr/local/opnsense/scripts/xgs/switch_qos.py show"
+	fi
+	if [ -f "${Q}" ]; then
+		rm -f "${Q}"
+		echo "the switch's settings file of Traffic Priority removed"
+	fi
+fi
+rm -rf /var/db/os-trafficpriority
 
 if [ -f /usr/local/etc/rc.d/configd ]; then
 	/usr/local/etc/rc.d/configd restart

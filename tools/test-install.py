@@ -11,7 +11,9 @@ was called. Two things FreeBSD does otherwise are bridged in the copy, and only 
 a prefix, which a stand-in gives GNU's mktemp. What is checked is what the scripts do: which files
 are laid down and with which modes, where the menu goes, that nothing is copied when a file has a
 syntax error, that the rules hook is gone before the filter reload that takes the classes' rules out
-of pf, that nothing of the plugin is left, and what each says when pf still holds a rule of it.
+of pf, that nothing of the plugin is left, and what each says when pf still holds a rule of it. And the
+switch's queues the plugin set, put back before its files go - by apply.py in uninstall.sh, by
+os-xgs-npu's switch tool in post-deinstall.sh, and there only when the settings file is the plugin's.
 
     python3 tools/test-install.py"""
 import os
@@ -66,7 +68,7 @@ class Box:
             path = os.path.join(self.repo, script)
             text = open(path, encoding='utf-8').read()
             # a path where one starts, not one inside another (/var/lib/php/tmp/ holds /tmp/ too)
-            text = re.sub(r'(?<![\w/.-])(/usr/local/|/var/lib/php/tmp/|/tmp/opnsense_|/sbin/pfctl)',
+            text = re.sub(r'(?<![\w/.-])(/usr/local/|/var/lib/php/tmp/|/tmp/opnsense_|/sbin/pfctl|/var/db/)',
                           lambda m: self.fake + m.group(1), text)
             text = text.replace('cp -R "${HERE}/src/" ', 'cp -R "${HERE}/src/." ')
             with open(path, 'w', encoding='utf-8', newline='\n') as handle:
@@ -82,6 +84,12 @@ class Box:
         os.makedirs(self.fake + '/sbin')
         self.write(self.fake + '/sbin/pfctl', '#!/bin/sh\necho "pfctl $*" >> %s\ncat %s 2>/dev/null\n'
                    % (self.calls, self.pf), 0o755)
+        # python3, as the firewall's: what it was asked to run, by the script's last two path parts
+        self.python()
+
+    def python(self):
+        self.write(self.fake + '/usr/local/bin/python3', '#!/bin/sh\necho "python3 $(basename $(dirname $1))/$(basename $1) '
+                   '$2" >> %s\n' % self.calls, 0o755)
 
     def stub(self, name, body, real=None):
         path = os.path.join(self.bin, name)
@@ -219,6 +227,9 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # uninstall.sh: everything gone, the hook before the reload, and pf asked
     os.makedirs(box.fake + '/usr/local/opnsense/scripts/trafficpriority/__pycache__', exist_ok=True)
+    box.write(box.fake + '/var/db/os-trafficpriority/hardware.json', '{}')
+    box.write(box.fake + '/var/db/os-xgs-npu/switch-qos.json', '{\n "owner": "os-trafficpriority"\n}\n')
+    box.python()
     box.forget()
     rc, out = box.run('install/uninstall.sh')
     check('uninstall.sh: nothing of the plugin left', box.plugin_files(), [])
@@ -228,8 +239,12 @@ with tempfile.TemporaryDirectory() as tmp:
         '/usr/local/opnsense/scripts/trafficpriority', '/usr/local/share/os-trafficpriority')
         if os.path.exists(box.fake + d)], [])
     check('uninstall.sh: os-xgs-npu\'s own menu left alone', os.path.exists(box.fake + XGS), True)
-    check('uninstall.sh: the hook removed before the filter reload, then pf asked',
-          box.called(), ['service configd restart', 'configctl filter reload skip_alias hook=no', 'pfctl -s rules'])
+    check('uninstall.sh: the switch put back first, the hook removed before the filter reload, then pf asked',
+          box.called(), ['python3 trafficpriority/apply.py clear', 'service configd restart',
+                         'configctl filter reload skip_alias hook=no', 'pfctl -s rules'])
+    check('uninstall.sh: what the page kept of the switch gone', os.path.exists(box.fake + '/var/db/os-trafficpriority'), False)
+    check('uninstall.sh: the switch\'s settings file of this plugin gone, whatever the put-back did',
+          os.path.exists(box.fake + '/var/db/os-xgs-npu/switch-qos.json'), False)
     check('uninstall.sh: pf holds none of its rules - said, and done', (rc, 'none of its rules is left' in out), (0, True))
 
     # uninstall.sh when pf still holds rules of it: said, and exit 1
@@ -249,6 +264,7 @@ with tempfile.TemporaryDirectory() as tmp:
     os.remove(box.fake + XGS)
     shutil.rmtree(box.fake + LOCAL)
     shutil.copytree(os.path.join(box.repo, 'src'), box.fake + LOCAL)
+    box.python()
     for path in source_files():
         os.chmod(box.fake + path, 0o755 if path.endswith(('.py', '.sh')) else 0o644)
     box.write(box.fake + '/usr/local/sbin/configctl', '#!/bin/sh\nexec configctl "$@"\n', 0o755)
@@ -268,6 +284,32 @@ with tempfile.TemporaryDirectory() as tmp:
     box.write(box.fake + '/usr/local/opnsense/scripts/trafficpriority/__pycache__/status.cpython-311.pyc', 'x')
     for path in source_files():
         os.remove(box.fake + path)
+    # os-xgs-npu's switch tool, and the settings file it keeps as this plugin wrote it
+    box.write(box.fake + '/usr/local/opnsense/scripts/xgs/switch_qos.py', '# the switch tool\n', 0o755)
+    settings = box.fake + '/var/db/os-xgs-npu/switch-qos.json'
+    box.write(settings, '{\n "classes": [],\n "owner": "os-trafficpriority"\n}\n')
+    box.write(box.fake + '/var/db/os-trafficpriority/hardware.json', '{}')
+    box.forget()
+    rc, out = box.run('pkg/post-deinstall.sh')
+    check('post-deinstall.sh: the switch put back through os-xgs-npu\'s tool, the settings file being the plugin\'s',
+          (box.called()[:1], os.path.exists(box.fake + '/var/db/os-trafficpriority')), (['python3 xgs/switch_qos.py clear'], False))
+    # a put-back that fails: said, and the settings file removed all the same
+    box.write(settings, '{\n "classes": [],\n "owner": "os-trafficpriority"\n}\n')
+    box.write(box.fake + '/usr/local/bin/python3', '#!/bin/sh\necho "python3 $(basename $(dirname $1))/$(basename $1) '
+              '$2" >> %s\nexit 1\n' % box.calls, 0o755)
+    box.forget()
+    rc, out = box.run('pkg/post-deinstall.sh')
+    check('post-deinstall.sh: a put-back that fails said, the settings file removed all the same',
+          ('not all put back' in out, os.path.exists(settings), 'settings file of Traffic Priority removed' in out),
+          (True, False, True))
+    box.python()
+    box.write(settings, '{\n "owner": "os-something"\n}\n')
+    box.forget()
+    box.run('pkg/post-deinstall.sh')
+    check('post-deinstall.sh: another plugin\'s settings file left alone', ([c for c in box.called() if c.startswith('python3')],
+                                                                       os.path.exists(settings)), ([], True))
+    os.remove(settings)
+    os.remove(box.fake + '/usr/local/opnsense/scripts/xgs/switch_qos.py')
     box.forget()
     rc, out = box.run('pkg/post-deinstall.sh')
     check('post-deinstall.sh: nothing of the plugin left - the menu file and Python\'s caches with it',

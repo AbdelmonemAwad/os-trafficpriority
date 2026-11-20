@@ -93,4 +93,14 @@
         <type>dropdown</type>
         <help>DSCP pf writes into every packet of this class's connections, both ways, their two ECN bits left as they came. EF (46) is the usual mark for voice. A mark is fixed when a connection opens: a change reaches new connections. Firewall: Shaper probably sees the mark on uploads only, not measured: pf writes it as a packet comes in on the class's interface, and on a reply as it leaves by it, so a download arriving on the WAN still carries the DSCP it came with.</help>
     </field>
+    <field>
+        <id>class.minimum</id>
+        <label>Minimum</label>
+        <type>text</type>
+        <hint>none: strict</hint>
+        <help>On an XGS 3300 whose switch os-xgs-npu sets: the part of a full port, in percent, this class's switch queue gets at least. Without minimums the classes in the switch are strict, served before everything else, and can take a whole port; with them their queues are weighted and the rest of the port keeps what is left. To keep the parts, os-xgs-npu turns off flow control (pause) on the coprocessor's uplink while the switch has them, and puts it back as it found it when it has none: the switch then drops what the coprocessor sends beyond what a port takes, instead of holding the coprocessor back. Measured on an XGS 3300: minimums of 30 and 20 shared a full port 59 to 41, where with the pause on the first took 98 percent; it cost 1 to 4 percent of the port's rate, and more retransmissions. Strict classes leave the pause as it was. Strict and weighted are not mixed: every class with a switch queue has a minimum, or none has. Only the first two DSCPs in the list's order have a queue of their own, and the minimums of the classes switched on add up to 100 at most. The switch has one set of weights for every port in weighted mode, the coprocessor's own uplink among them, so the part is the same on each; queues 1 to 6, which no class takes, get one turn each in it - frames your clients mark themselves (DSCP 8 to 55) wait in those queues on their way into the coprocessor, and when that link is full each queue gets about one turn in a hundred. Not measured yet: whether the switch shares a port by frames or by bytes.</help>
+        <grid_view>
+            <visible>false</visible>
+        </grid_view>
+    </field>
 </form>

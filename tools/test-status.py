@@ -189,6 +189,30 @@ with tempfile.TemporaryDirectory() as tmp:
     check('no rules.error: not refused', status.refused(rules, os.path.join(tmp, 'none')), False)
     check('no rules.debug: not refused', status.refused(os.path.join(tmp, 'none'), errors), False)
 
+    # the switch's queues: what Apply gives the switch, from the classes the rules file holds a rule for
+    # while it holds the one setting every IPv4 connection's DSCP to 0; what the
+    # last Apply did, shown whatever else is said; the switch read again, when asked
+    xgs = {'assembly': 'AMDA0202-0004', 'family': 'octeontx', 'writes': True, 'why': '', 'devices': {}}
+    placed = os.path.join(tmp, 'placed.debug')
+    with open(placed, 'w', encoding='utf-8') as handle:
+        handle.write('match in inet from {any} to {any} scrub ( set-tos 0x00 ) label "trafficpriority-clear"\n' + RULES)
+    kept = os.path.join(tmp, 'hardware.json')
+    hw = status.status(config, placed, PF, project, None, errors, model=xgs, result=kept)['hardware']
+    check('status: the switch - Voice\'s EF placed by the rules file, queue 7 strict; no Apply yet, nothing pending',
+          (hw['why_not'], [d['dscp'] for d in hw['dscps']], hw['classes'][U1]['queue'], hw['last'], hw['pending']),
+          ('', [46], 7, None, True))
+    with open(kept, 'w', encoding='utf-8') as handle:
+        handle.write('{"status": "running", "said": "", "time": "2026-11-19 12:00:00 UTC"}')
+    hw = status.status(config, placed, PF, project, None, errors, model=xgs, result=kept)['hardware']
+    check('status: an Apply still running - said, and not pending', (hw['last']['status'], hw['pending']), ('running', False))
+    with open(kept, 'w', encoding='utf-8') as handle:
+        handle.write('{"status": "failed", "said": "not read back as written", "time": "x", "conf": null}')
+    hw = status.status(config, rules, PF, project, None, errors, model=None, result=kept,
+                       check={'ok': False, 'changed': ['entry:3']})['hardware']
+    check('status: a put-back that failed shown even with no switch to set now; the switch read again passed on',
+          (hw['why_not'], hw['last']['status'], hw['last']['said'], hw['check']['changed']),
+          ('no-project', 'failed', 'not read back as written', ['entry:3']))
+
     with open(project, 'w', encoding='utf-8') as handle:
         handle.write('<model/>')
     check('status: os-xgs-npu installed', status.status(config, rules, PF, project, None, errors)['project'], True)

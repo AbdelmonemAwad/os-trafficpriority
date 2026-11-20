@@ -8,7 +8,11 @@
  * (Api/ServiceController), run as OPNsense runs them, with stand-ins for what they reach of OPNsense's
  * MVC: BaseModel and its nodes and messages, ApiControllerBase, and configd (Backend). Marking is the
  * plugin's own; Util, Rule and FilterRule are OPNsense's, of the tree OPNSENSE_CORE names (as for
- * tools/test-rules.php); the aliases are stand-ins, the same two as there.
+ * tools/test-rules.php); the aliases are stand-ins, the same two as there. And a minimum: refused at the
+ * save on a class with no place in the switch's queues and when the minimums of the classes switched on
+ * would add up to more than 100 (Hardware, the same cases as tools/test-hardware.py gives hardware.py);
+ * the switch's queue of each class and each rule of Firewall: Shaper on the page; and Apply's second
+ * half, the switch set after the filter reload.
  *
  * OPNsense's own field types are not run here. They check only the fields that changed
  * (BaseModel::performValidation()), and what they refuse is theirs - PortField a port with a line
@@ -210,10 +214,14 @@ namespace OPNsense\Core {
     {
         public static $answers = [];
         public static $asked = [];
+        public static $detached = [];
 
         public function configdRun($event, $detach = false)
         {
             self::$asked[] = $event;
+            if ($detach) {
+                self::$detached[] = $event;
+            }
             return self::$answers[$event] ?? null;
         }
     }
@@ -238,6 +246,7 @@ namespace {
         require $lib . '/' . $class . '.php';
     }
     require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Marking.php';
+    require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Hardware.php';
     require $root . '/src/opnsense/mvc/app/models/OPNsense/TrafficPriority/TrafficPriority.php';
     require $root . '/src/opnsense/mvc/app/controllers/OPNsense/TrafficPriority/Api/ServiceController.php';
 
@@ -279,7 +288,7 @@ namespace {
         return ['changed' => $changed, 'values' => array_merge(['enabled' => '1', 'sequence' => '100',
             'description' => 'Voice', 'interface' => 'lan', 'ipprotocol' => 'inet', 'protocol' => 'udp',
             'source_net' => 'any', 'source_port' => '', 'destination_net' => 'any', 'destination_port' => '5060',
-            'match_dscp' => '', 'dscp' => '46'], $fields)];
+            'match_dscp' => '', 'dscp' => '46', 'minimum' => ''], $fields)];
     }
 
     /* the messages of a save: [field => [message, ...]], the field as its name in the class */
@@ -348,6 +357,47 @@ namespace {
     check(array_keys(saved([U1 => cls(['source_net' => '192.168.1.20', 'destination_net' => '2001:db8::5'])])) ===
         [at('ipprotocol')], 'an IPv4 source to an IPv6 destination: refused, on IP version');
 
+    /* a minimum: held by the switch's queues, so only on a class with one of its two places - the first
+       two DSCPs in the list's order, IPv4, above Best Effort, of a class that makes a rule - the minimums
+       adding up to 100 at most, and not beside a strict class: each class with a place has one, or none */
+    $u3 = '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a03';
+    check(saved([U1 => cls(['minimum' => '30'])]) === [], 'a minimum on a class with a place: saved');
+    check(saved([U1 => cls(['minimum' => '100'])]) === [], 'a minimum of 100: saved');
+    $third = saved([U1 => cls(['minimum' => '10'], false), U2 => cls(['dscp' => '34', 'minimum' => '10'], false),
+        $u3 => cls(['dscp' => '40', 'minimum' => '20'])]);
+    check(array_keys($third) === [at('minimum', $u3)] && strpos($third[at('minimum', $u3)][0], 'first two DSCPs') !== false,
+        'a minimum on a third DSCP: refused, on Minimum, saying the switch takes the first two');
+    check(saved([U1 => cls(['minimum' => '10'], false), U2 => cls(['dscp' => '46', 'minimum' => '10'], false),
+        $u3 => cls(['dscp' => '34', 'minimum' => '20'])]) === [],
+        'a minimum on the second DSCP, the two classes of the first with theirs: saved');
+    check(saved([U1 => cls(['sequence' => '300'], false), U2 => cls(['dscp' => '34', 'minimum' => '10'], false),
+        $u3 => cls(['dscp' => '40', 'minimum' => '20', 'sequence' => '50'])]) === [],
+        'a minimum on a class listed third but second by its sequence: saved');
+    foreach (['0' => 'Best Effort', '8' => 'CS1, below it'] as $dscp => $what) {
+        check(array_keys(saved([U1 => cls(['dscp' => (string)$dscp, 'minimum' => '20'])])) === [at('minimum')],
+            'a minimum on ' . $what . ': refused');
+    }
+    check(array_keys(saved([U1 => cls(['ipprotocol' => 'inet6', 'minimum' => '20'])])) === [at('minimum')],
+        'a minimum on a class marking IPv6 alone: refused');
+    /* a minimum beside a strict class: refused on the class saved, whichever of the two it is */
+    $beside = saved([U1 => cls([], false), U2 => cls(['dscp' => '34', 'minimum' => '30'])]);
+    check(array_keys($beside) === [at('minimum', U2)] && strpos($beside[at('minimum', U2)][0], 'beside a strict class') !== false,
+        'a minimum beside a strict class: refused, on Minimum');
+    $strict = saved([U1 => cls(['description' => 'Renamed']), U2 => cls(['dscp' => '34', 'minimum' => '30'], false)]);
+    check(array_keys($strict) === [at('minimum')] && strpos($strict[at('minimum')][0], 'beside a strict class') !== false,
+        'a strict class saved beside one with a minimum: refused, on its Minimum');
+    check(saved([U1 => cls(['interface' => '', 'destination_port' => '', 'protocol' => 'any'], false),
+        U2 => cls(['dscp' => '34', 'minimum' => '30'])]) === [],
+        'a class that makes no rule has no place: a minimum beside it is no mix');
+    $over = saved([U1 => cls(['minimum' => '60'], false), U2 => cls(['dscp' => '34', 'minimum' => '50'])]);
+    check(array_keys($over) === [at('minimum', U2)] && strpos($over[at('minimum', U2)][0], 'more than 100') !== false,
+        'minimums of 60 and 50: the one saved refused, on Minimum');
+    check(saved([U1 => cls(['minimum' => '60', 'enabled' => '0'], false), U2 => cls(['dscp' => '34', 'minimum' => '50'])]) === [],
+        'a class switched off: its minimum not counted');
+    check(saved([U1 => cls(['minimum' => '60', 'enabled' => '0'])]) === [], 'a class switched off: its own minimum not refused');
+    check(saved([U1 => cls(['minimum' => '30'])], [['classes.class.' . at('minimum'), 'A percent from 1 to 100.']]) ===
+        [at('minimum') => ['A percent from 1 to 100.']], 'the field type\'s own message on Minimum: kept, and no second one');
+
     /* only a class that changed is read, unless the whole model is */
     check(saved([U1 => cls($everything, false)]) === [], 'a class that did not change: not read');
     check(isset(saved([U1 => cls($everything, false)], [], true)[at('interface')]), 'the whole model validated: every class read');
@@ -363,23 +413,35 @@ namespace {
     };
     $u3 = '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a03';
     $u4 = '6F3B0E2C-1A4D-4C8E-9B7A-2D5E8F1C3A04';
-    $answer = ['enabled' => true, 'pf' => true, 'refused' => false, 'marked' => 2, 'classes' => [
+    $hardware = ['why_not' => '', 'classes' => [
+        U1 => ['why' => 'hardware', 'queue' => 7, 'kind' => 'strict', 'percent' => null, 'minimum' => null, 'minimum_why' => ''],
+    ], 'shaper' => [
+        ['uuid' => 'r1', 'sequence' => 1, 'description' => 'All up', 'interface' => 'wan', 'direction' => 'out',
+            'target' => 'Up', 'hardware' => [['what' => 'limit', 'port' => 'Port2', 'kbit' => 100000]], 'host' => []],
+        'not a row',
+        ['uuid' => 'r2', 'sequence' => 2, 'description' => 'Voice', 'hardware' => 'not a list',
+            'host' => [['why' => 'unmarked', 'dscp' => 34]]],
+    ]];
+    $answer = ['enabled' => true, 'pf' => true, 'refused' => false, 'marked' => 2, 'hardware' => $hardware, 'classes' => [
         ['uuid' => U1, 'written' => 2, 'not_placed' => 0, 'rules' => 2, 'states' => 4, 'created' => 19,
             'packets' => 48420, 'bytes' => 9924690],
         ['uuid' => strtolower($u4), 'written' => 1, 'not_placed' => 0, 'rules' => 0],
     ]];
-    Backend::$answers = ['trafficpriority status' => json_encode($answer)];
+    Backend::$answers = ['trafficpriority status check' => json_encode($answer)];
+    Backend::$asked = [];
     $got = (new ServiceController())->statusAction();
-    check(($got['marked'] ?? null) === 2 && ($got['writes_mark'] ?? null) === true && Marking::markKey() !== null,
-        'status: status.py\'s answer, and this OPNsense writes the mark');
+    check(($got['marked'] ?? null) === 2 && ($got['writes_mark'] ?? null) === true && Marking::markKey() !== null &&
+        Backend::$asked === ['trafficpriority status check'],
+        'status: status.py\'s answer with the switch read again, and this OPNsense writes the mark');
     check(($nokey->statusAction()['writes_mark'] ?? null) === false, 'status: an OPNsense with no key for the mark: said');
     foreach (['', 'not json', '"a string"', null] as $bad) {
-        Backend::$answers = ['trafficpriority status' => $bad];
+        Backend::$answers = ['trafficpriority status check' => $bad];
         check((new ServiceController())->statusAction() === ['error' => 'Status could not be read.'],
             'status: configd answering ' . json_encode($bad) . ': could not be read');
     }
 
     Backend::$answers = ['trafficpriority status' => json_encode($answer)];
+    Backend::$asked = [];
     BaseModel::$given = [U1 => cls(), U2 => cls($everything), $u3 => cls(['destination_port' => "5060\n#"]),
         $u4 => cls(['description' => 'Upper', 'dscp' => '34']), '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a05' => cls(['enabled' => '0'])];
     BaseModel::$fieldMessages = [];
@@ -397,6 +459,19 @@ namespace {
     check(($rows[strtolower($u4)]['written'] ?? null) === 1 && $rows[strtolower($u4)]['dscp'] === 'AF41 (34)',
         'applied: a UUID in upper case in config.xml found in status.py\'s lower-case answer');
     check(($rows['6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a05']['enabled'] ?? null) === false, 'applied: a class switched off');
+    check(Backend::$asked === ['trafficpriority status'], 'applied: the grid asks without reading the switch');
+    check(($one['switch']['queue'] ?? null) === 7 && $one['switch_not'] === '' && $rows[U2]['switch'] === null,
+        'applied: each class\'s switch queue from status.py, none for a class it does not name');
+    $shaper = (new ServiceController())->searchShaperAction();
+    check(count($shaper['rows']) === 2 && $shaper['rows'][0]['hardware'][0]['port'] === 'Port2' &&
+        $shaper['rows'][1]['hardware'] === [] && $shaper['rows'][1]['host'][0]['why'] === 'unmarked' &&
+        $shaper['rows'][1]['direction'] === '' && $shaper['sort'] === 'sequence',
+        'Firewall: Shaper: each rule with what the switch takes and what stays with the host, a row that is none left out');
+    Backend::$answers = ['trafficpriority status' => json_encode(['enabled' => false, 'classes' => []])];
+    check((new ServiceController())->searchShaperAction()['rows'] === [] &&
+        ((new ServiceController())->searchAppliedAction()['rows'][0]['switch_not'] ?? null) === 'unknown',
+        'a status with no switch part: no rule, and the switch not known');
+    Backend::$answers = ['trafficpriority status' => json_encode($answer)];
     check($grid['fields'] === ['description', 'dscp'] && $grid['sort'] === 'sequence', 'applied: searched by name and DSCP, by sequence');
     $keyless = [];
     foreach ($nokey->searchAppliedAction()['rows'] as $row) {
@@ -407,17 +482,23 @@ namespace {
 
     Backend::$answers = ['filter reload skip_alias' => "OK\n"];
     Backend::$asked = [];
+    Backend::$detached = [];
     $get = new ServiceController();
     $get->request->post = false;
     check($get->reconfigureAction() === ['status' => 'failed'] && Backend::$asked === [], 'apply: only by POST');
-    check((new ServiceController())->reconfigureAction() === ['status' => 'ok'] && Backend::$asked === ['filter reload skip_alias'],
-        'apply: the filter reloaded, the aliases left, and OK taken');
+    check((new ServiceController())->reconfigureAction() === ['status' => 'ok'] &&
+        Backend::$asked === ['filter reload skip_alias', 'trafficpriority apply'] &&
+        Backend::$detached === ['trafficpriority apply'],
+        'apply: the filter reloaded, the aliases left, OK taken, then the switch set in the background - its outcome in the status');
+    Backend::$asked = [];
     foreach (['Execute error', '', null] as $out) {
         Backend::$answers = ['filter reload skip_alias' => $out];
+        Backend::$asked = [];
         $failed_reload = (new ServiceController())->reconfigureAction();
         check(($failed_reload['status'] ?? '') === 'failed' &&
-            strpos($failed_reload['status_msg'] ?? '', 'Filter reload did not finish.') === 0,
-            'apply: configd answering ' . json_encode($out) . ': failed, and said');
+            strpos($failed_reload['status_msg'] ?? '', 'Filter reload did not finish.') === 0 &&
+            !in_array('trafficpriority apply', Backend::$asked, true),
+            'apply: configd answering ' . json_encode($out) . ': failed, and said; the switch not set');
     }
 
     echo ($failed ? "$failed of $checks checks failed\n" : "$checks checks passed\n");

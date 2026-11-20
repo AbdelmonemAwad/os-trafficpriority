@@ -4,7 +4,7 @@
 -->
 <model>
     <mount>//OPNsense/TrafficPriority</mount>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <description>Traffic priority</description>
     <items>
         <!--
@@ -17,6 +17,14 @@
                 <Required>Y</Required>
                 <Default>0</Default>
             </enabled>
+            <!--
+                Firewall: Shaper followed into the switch's queues where the switch can do what a rule does
+                (scripts/trafficpriority/shaper_map.py); read, never written. Off by default, as above.
+            -->
+            <follow_shaper type="BooleanField">
+                <Required>Y</Required>
+                <Default>0</Default>
+            </follow_shaper>
         </general>
         <classes>
             <class type="ArrayField">
@@ -146,6 +154,18 @@
                         <cs7 value="56">CS7 (56)</cs7>
                     </OptionValues>
                 </dscp>
+                <!--
+                    The part of each front port, in percent, the class's switch queue gets at least when the
+                    port is full, by the switch's weighted queues (scripts/trafficpriority/hardware.py);
+                    empty: none, the class strict. TrafficPriority.php refuses one on a class without a
+                    place in the switch, and minimums that add up to more than 100.
+                -->
+                <minimum type="IntegerField">
+                    <Required>N</Required>
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>100</MaximumValue>
+                    <ValidationMessage>A percent from 1 to 100.</ValidationMessage>
+                </minimum>
             </class>
         </classes>
     </items>
