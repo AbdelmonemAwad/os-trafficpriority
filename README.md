@@ -171,11 +171,14 @@ for the page and the switch):
   rule's source as either, so a Source beside them would widen the class, not narrow it, and the page
   refuses one at the save;
 - **applications and categories** - those Application Control keeps a table for, by the names nDPI
-  gives them: each application chosen there in Application tables, Blocked applications or Rules and
-  applied, and every category of the installed nDPI while it classifies. A table holds the servers nDPI
-  named as that application, or as one of the category, and is the class's destination. They take the
-  place of Destination likewise. A connection to a server of any of a class's applications and
-  categories is the class's;
+  gives them: each application chosen there in Application tables or Blocked applications, or in its
+  Rules tab where it has one (os-appcontrol's third part), and applied, and every category of the
+  installed nDPI while it classifies. A table holds the servers nDPI named as that application, or as one
+  of the category, and is the class's destination. They take the place of Destination likewise. A
+  connection to a server of any of a class's applications and categories is the class's. A blocked
+  application's table holds only the servers the firewall's own resolver vouched for, and its block rule
+  stops every new connection to them, so a class that names it marks only what the block lets through -
+  with Application Control's Rules, the devices outside a rule's source;
 - **the rules** - one pf `match` rule for each interface, IP version, table of a group or a user and
   table of an application or a category, as for a class's addresses, the rest of the class - its
   protocol, ports, DSCP to arrive with - in each:
@@ -186,7 +189,10 @@ for the page and the switch):
 
   OPNsense's own rule class writes each table as its alias's macro (`Rule.php:61-66`, `87-93`), which
   OPNsense defines in the rules file with its table for every alias of config.xml (`filter.inc:619`,
-  `621`), so a rule never names a table pfctl is not given;
+  `621`), so a rule never names a table pfctl is not given. The rules multiply: 2 groups and users, 3
+  applications and categories, 2 interfaces and both IP versions are 24 rules, and pf reads each for
+  every new connection - choose one group rather than many users, or one category rather than many
+  applications, where they mean the same;
 - **only their own tables** - a table is taken only as its plugin's alias, External and switched on,
   while that plugin is on - User Identity's Enabled, Application Control classifying - and, for a group
   or a user, its row switched on. Anything else adds nothing, and the Applied tab says why for each: the
@@ -198,13 +204,26 @@ for the page and the switch):
   log says so at each filter reload. On an XGS 3300 the class keeps its switch queue all the same - its
   settings decide the places, as at the save, so the other plugins' state never moves the queues of
   the classes after it - and marks again once its tables are there: their plugin's Apply reloads the
-  filter, which writes its rules again, with no Apply here;
+  filter, which writes its rules again, with no Apply here. Kept with the queue, for a class that marks
+  nothing meanwhile: the switch's entry for its DSCP, the rule setting the DSCP of every IPv4 connection
+  no class marks to 0, and with minimums port 0's pause off (1 to 4 % of the line rate, and more
+  retransmissions). The reload records the class it left so in its rules file, a line written commented
+  out that pf never reads, and Apply takes the switch's places from that same file;
 - **a mark is fixed when a connection opens** - a connection a device opened before its address joined
   a user's table keeps the mark it opened with; where os-xgs-npu's cut list holds User Identity's
-  tables, such a connection is cut as the address joins one, and opens again marked. nDPI names a
-  connection 10 to 70 seconds after it begins - Application Control's windows of a minute - so the
-  connection that brings a server into an application's table is not marked; those opened to that
-  server after it are, while it stays in the table (Application Control's Expire, an hour by default);
+  tables, such a connection is cut as the address joins one, and opens again marked. A connection to an
+  application's server is marked only when the server is in the table as the connection opens, and keeps
+  that for its whole life. nDPI names a connection 10 to 70 seconds after it begins - Application
+  Control's windows of a minute - and the server then stays in the table for Application Control's
+  Expire (an hour by default) after the last new connection named to it. So:
+  - the first connection to a server new to the table is not marked, for its whole life - a call's
+    media among them, one long flow that begins with the call;
+  - a connection opened to that server while it is in the table is marked;
+  - nor is one opened once an Expire has passed with no new connection named to its server: a call going
+    on, however long, does not keep its server in the table;
+  - to mark a call from its first packet, add beside the class one with the same DSCP by the call's own
+    ports, or by an alias of the servers its service publishes (Firewall: Aliases, URL Table); a longer
+    Expire in Application Control keeps a server in the table longer between calls;
 - **the page** - the Applied tab's Their tables column: each group, user, application and category of a
   class, with its table and how many addresses pf holds in it now (`pfctl -t <table> -T show`), or why
   it has none. The Classes tab says when os-useridentity or os-appcontrol is not installed: Groups and
@@ -404,7 +423,14 @@ stays counted while it is open.
   the checks alone, not yet on an appliance: neither the classes' rules on the tables os-useridentity
   and os-appcontrol fill there, nor the two tests their part of the plan sets - a video call and a large
   download on one port, the call in the high queue; two users on two devices, a high class for one, its
-  share under load higher and its minimum kept.
+  share under load higher and its minimum kept. The call is to be run both ways: to a server already in
+  the application's table, and as a first call to a server new to it, which stays unmarked.
+- **the first call to a server new to an application's table** - not marked, for its whole life, and no
+  more is the first after an Expire (above). pf fixes a connection's mark when it opens and has no way to
+  change it after; only cutting the connection would, and nothing here cuts one. What would mark it is
+  the server in the table before its first connection, which Application Control does not do: it puts a
+  server there once a connection to it has been named. Until it does, a class by the call's own ports, or
+  by an alias of the servers its service publishes, marks a call from its first packet.
 - **an application's servers, as nDPI names them** - Application Control puts a server in the table of
   an application it does not block by the name its connections carry, read by nDPI from their packets -
   the server name a TLS or QUIC client sends among them; only for an application it blocks does it ask

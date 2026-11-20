@@ -182,6 +182,21 @@ def texts():
           'README: the same of a user\'s table')
     check('10 to 70 seconds' in form and 'Expire' in form and 'A server two applications share is in both tables' in form,
           'texts (help): when nDPI names a connection, how long a server stays, servers shared')
+    check('the first connection to a server new to the table is not marked' in form and
+          'a call going on does not keep its server in the table' in form and
+          "by the call's own ports, or by an alias of the servers its service publishes" in form and
+          'a longer Expire in Application Control' in form,
+          'texts (help): the first call to a server new to the table not marked, none after an Expire, and the levers that '
+          'mark from the first packet (finding 1)')
+    check('or in its Rules tab where it has one' in form and "A blocked application's new connections are blocked" in form,
+          'texts (help): the Rules tab where os-appcontrol has one; a blocked application marks only what its block lets through')
+    check('the first call to a server new to an application' in volt and 'marks it from its first packet' in volt and
+          'pause off' in volt,
+          'texts (Applied): the first call not marked, the lever, and what an idle class keeps with its queue')
+    readme = open(os.path.join(ROOT, 'README.md'), encoding='utf-8').read()
+    check('the first connection to a server new to the table is not marked' in readme and
+          'does not keep its server in the table' in readme and 'the first call to a server new to an application' in readme,
+          'README: the same, in What it does and in Not yet')
     check('give such a class a minimum' in form and 'a whole port' in form,
           'texts (help): a device naming its own server - a class without a minimum can take a whole port')
     check('makes no rule at all' in form and 'makes no rule' in volt and 'keeps its switch queue' in volt,
