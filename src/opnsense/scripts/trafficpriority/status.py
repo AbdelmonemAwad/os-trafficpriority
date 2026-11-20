@@ -61,11 +61,13 @@ MARKED = re.compile(r', set-tos 0x[0-9a-f]{2}\b')
 PROJECT = '/usr/local/opnsense/mvc/app/models/OPNsense/XGS/XGS.xml'
 
 
-def settings(path=None):
+def settings(path=None, installed=None):
     """(on, [each class's uuid, whether it is switched on, its description, its DSCP, and its groups and
     users, applications and categories - each with its table or why it has none (sources.resolve()'s
     items) - and idle, the side with no table now: '', 'users' or 'apps', '' while Traffic Priority is
-    off - what the next filter reload finds, not what pf holds]); None when config.xml cannot be read."""
+    off - what the next filter reload finds, not what pf holds]); None when config.xml cannot be read.
+    installed: whether os-useridentity and os-appcontrol are (sources.installed()'s answer), read from their
+    model files when not given."""
     try:
         root = ET.parse(path or CONFIG).getroot()
     except (OSError, ET.ParseError):
@@ -74,7 +76,8 @@ def settings(path=None):
     if own is None:
         return False, []
     on = (own.findtext('general/enabled') or '0') == '1'
-    found_aliases, found_rows, found_plugins = sources.aliases(root), sources.rows(root), sources.plugins(root)
+    found_aliases, found_rows = sources.aliases(root), sources.rows(root)
+    found_plugins = sources.plugins(root, installed)
     classes = []
     for node in own.findall('classes/class'):
         resolved = sources.resolve({child.tag: (child.text or '') for child in node}, found_aliases, found_rows,
@@ -252,8 +255,9 @@ def status(config=None, rules=None, pf_text=None, project=None, states=None, err
            check=None, counts=None, installed=None):
     """counts: a table's name -> how many addresses pf holds in it (pf_table()); installed: whether
     os-useridentity and os-appcontrol are, {'identity', 'appcontrol'} - from their models' files when not
-    given."""
-    read = settings(config)
+    given - which both the lines of the Classes tab and each item's reason follow."""
+    installed = sources.installed() if installed is None else installed
+    read = settings(config, installed)
     if read is None:
         return {'error': 'config.xml could not be read'}
     on, classes = read
@@ -285,10 +289,7 @@ def status(config=None, rules=None, pf_text=None, project=None, states=None, err
         'marked': marked(states, marks),
         'project': os.path.exists(project or PROJECT),
         'hardware': switch(config, model, result, rules, check),
-        'others': installed if installed is not None else {
-            'identity': os.path.exists(sources.IDENTITY_MODEL),
-            'appcontrol': os.path.exists(sources.APPCONTROL_MODEL),
-        },
+        'others': installed,
     }
 
 

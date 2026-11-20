@@ -600,8 +600,12 @@ namespace {
         return ['name' => $a['name'], 'type' => $a['type'], 'content' => ''];
     }, $aliasesGiven));
 
+    /* both plugins installed - their model files there - unless a case says otherwise (Sources::installed()) */
+    const BOTH = ['identity' => true, 'appcontrol' => true];
+    Sources::$installed = BOTH;
+
     /* the configuration with User Identity's and Application Control's settings and the aliases beside the
-       classes; $identity / $classify '' leave that plugin out, as where it is not installed */
+       classes; $identity / $classify '' leave that plugin's settings out, as where it was never set */
     function withTables($classes, $identity = '1', $classify = '1', $aliases = null)
     {
         global $aliasesGiven;
@@ -655,16 +659,25 @@ namespace {
     }
 
     /* no table on one side: no rule at all - and the log says why */
+    /* User Identity's settings as its removal leaves them (P6): Enabled 1, the rows, and no alias of theirs */
+    $leftByRemoval = withTables([cls(U1, ['users' => U_ALICE])], '1', '1', array_values(array_filter($aliasesGiven, function ($a) {
+        return strpos($a['name'], 'uid_') !== 0;
+    })));
     $cases = [
         'User Identity off' => [withTables([cls(U1, ['users' => U_ALICE])], '0'), 'groups and users now: identity-off'],
-        'User Identity not installed' => [withTables([cls(U1, ['users' => U_ALICE])], ''), 'groups and users now: no-identity'],
+        'User Identity installed and never set - off, its default' => [withTables([cls(U1, ['users' => U_ALICE])], ''),
+            'groups and users now: identity-off'],
+        'User Identity removed, its settings left as its removal leaves them' => [$leftByRemoval,
+            'groups and users now: no-identity', ['identity' => false, 'appcontrol' => true]],
+        'User Identity not installed, its aliases still there' => [withTables([cls(U1, ['users' => U_ALICE])]),
+            'groups and users now: no-identity', ['identity' => false, 'appcontrol' => true]],
         'a row switched off' => [withTables([cls(U1, ['users' => U_OFF])]), 'groups and users now: row-off'],
         'a row no longer there' => [withTables([cls(U1, ['users' => U_GONE])]), 'groups and users now: row-gone'],
         'a row not applied in User Identity yet' => [withTables([cls(U1, ['users' => U_UNAPPLIED])]), 'groups and users now: no-table'],
         'a row whose alias is the owner\'s' => [withTables([cls(U1, ['users' => U_STRANGER])]), 'groups and users now: not-its'],
         'a user\'s table switched off' => [withTables([cls(U1, ['users' => U_BOB])]), 'groups and users now: table-off'],
-        'Application Control not installed' => [withTables([cls(U1, ['application' => 'Zoom'])], '1', ''),
-            'applications and categories now: no-appcontrol'],
+        'Application Control not installed, its settings and an alias of its left' => [withTables([cls(U1, ['application' => 'Zoom'])]),
+            'applications and categories now: no-appcontrol', ['identity' => true, 'appcontrol' => false]],
         'Application Control not classifying' => [withTables([cls(U1, ['application' => 'Zoom'])], '1', '0'),
             'applications and categories now: appcontrol-off'],
         'an application without a table' => [withTables([cls(U1, ['application' => 'Netflix'])]),
@@ -679,7 +692,9 @@ namespace {
             'applications and categories now: no-table'],
     ];
     foreach ($cases as $what => $case) {
+        Sources::$installed = $case[2] ?? BOTH;
         $lines = render($case[0]);
+        Sources::$installed = BOTH;
         check(count(ours($lines)) === 0 && strpos(logged(), $case[1]) !== false,
             $what . ': no rule - none from every source or to every destination - and the log says why: ' . logged());
         /* the reload records that it left the class idle, in the rules file, by a line pf never reads */
@@ -688,6 +703,9 @@ namespace {
         check(records($lines) === [$want], $what . ": the reload's record of the class left idle, commented out:\n" .
             "      want $want\n      got  " . json_encode(records($lines)));
     }
+    $never = ours(render(withTables([cls(U1, ['interface' => '', 'application' => 'Zoom'])], '1', '')));
+    check(count($never) === 1 && strpos($never[0], ' to $appcontrol_Zoom ') !== false,
+        'Application Control installed and never set - classifying, its default - its table there: taken: ' . json_encode($never));
     $recorded = records(render(withTables([cls(U1, ['users' => U_GONE, 'description' => "Calls\nnow"])])));
     check(count($recorded) === 1 && count(explode("\n", $recorded[0])) === 1 && strpos($recorded[0], '# ') === 0 &&
         strpos($recorded[0], '# Traffic Priority: Calls now - makes no rule: ') !== false,

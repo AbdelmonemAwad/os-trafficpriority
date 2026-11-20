@@ -256,7 +256,7 @@ with tempfile.TemporaryDirectory() as tmp:
         return {'uid_alice': 1, 'appcontrol_Zoom': 14}.get(table)
 
     got = status.status(config, rules, PF, project, None, errors, counts=counts,
-                        installed={'identity': True, 'appcontrol': False})
+                        installed={'identity': True, 'appcontrol': True})
     rows = {c['uuid']: c for c in got['classes']}
     check('status: each item of a class - its table and what pf holds in it, or why it has none',
           [(i['kind'], i['name'], i['table'], i['why'], i['count']) for i in rows[U1]['tables']],
@@ -277,16 +277,26 @@ with tempfile.TemporaryDirectory() as tmp:
     check('status: Traffic Priority off - no class idle, as the next filter reload writes no class\'s rule at all (PY2)',
           (rows_off[U2]['idle'], rows_off[U2]['tables'][0]['why']), ('', 'row-gone'))
     check('status: whether os-useridentity and os-appcontrol are installed, as given', got['others'],
-          {'identity': True, 'appcontrol': False})
+          {'identity': True, 'appcontrol': True})
     check('status: their models looked for where they install them', (status.sources.IDENTITY_MODEL,
                                                                      status.sources.APPCONTROL_MODEL),
           ('/usr/local/opnsense/mvc/app/models/OPNsense/UserIdentity/UserIdentity.xml',
            '/usr/local/opnsense/mvc/app/models/OPNsense/AppControl/AppControl.xml'))
-    check('status: neither installed here, by their files', status.status(config, rules, PF, project, None, errors,
-                                                                          counts=counts)['others'],
-          {'identity': False, 'appcontrol': False})
+    # os-appcontrol removed, its settings and an alias of its left: the line of the Classes tab and each item's
+    # reason agree - both read its model's file (P6)
+    got = status.status(config, rules, PF, project, None, errors, counts=counts,
+                        installed={'identity': True, 'appcontrol': False})
+    check('status: Application Control not installed, its settings left - its items say so, as the Classes tab does',
+          (got['others'], [(i['name'], i['table'], i['why']) for i in got['classes'][0]['tables']]),
+          ({'identity': True, 'appcontrol': False}, [('alice', 'uid_alice', ''), ('Zoom', '', 'no-appcontrol'),
+                                                     ('Netflix', '', 'no-appcontrol'), ('VoIP', '', 'no-appcontrol')]))
+    got = status.status(config, rules, PF, project, None, errors, counts=counts)
+    check('status: neither installed here, by their files - the Classes tab and every item say so',
+          (got['others'], sorted({i['why'] for c in got['classes'] for i in c['tables']})),
+          ({'identity': False, 'appcontrol': False}, ['no-appcontrol', 'no-identity']))
     check('status: pf holding no such table - no count', [i['count'] for i in status.status(
-        config, rules, PF, project, None, errors, counts=lambda t: None)['classes'][0]['tables']], [None, None, None, None])
+        config, rules, PF, project, None, errors, counts=lambda t: None,
+        installed={'identity': True, 'appcontrol': True})['classes'][0]['tables']], [None, None, None, None])
     hw = status.status(config, placed, PF, project, None, errors, model=xgs, result=kept, counts=counts)['hardware']
     check('status: the switch - a class of users with no table now, which the last reload did not record as left idle: '
           'no place', (hw['classes'][U2]['why'], [d['dscp'] for d in hw['dscps']]), ('rule', [46]))

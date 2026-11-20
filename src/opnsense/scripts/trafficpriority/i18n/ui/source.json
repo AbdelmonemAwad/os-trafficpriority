@@ -8,6 +8,8 @@
  "%s (an application)",
  "%s (no table in Application Control now)",
  "%s (not in User Identity now)",
+ "%s - Application Control is not installed",
+ "%s - User Identity is not installed",
  "%s - switched off in Application Control",
  "%s - switched off in User Identity",
  "%s of 2",

@@ -25,6 +25,7 @@ appcontrol-off, no-table, not-its, table-off (Sources.php says what each is). to
 tools/test-rules.php hold the two to one set of cases.
 """
 
+import os
 import re
 
 UID_PREFIX = 'uid_'
@@ -37,9 +38,16 @@ UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 TABLE = re.compile(r'[A-Za-z_][A-Za-z0-9_]{0,30}')     # Sources::TABLE: an alias's name, 31 at most
 CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 TRIM = ' \t\n\r\x00\x0b'                               # what PHP's trim() takes off
-# where each plugin's model is, installed: the page says when one is not
+# where each plugin's model is while it is installed (Sources::IDENTITY_MODEL, APPCONTROL_MODEL): its removal
+# takes the directory away and leaves its settings in config.xml, so they cannot say whether it is installed
 IDENTITY_MODEL = '/usr/local/opnsense/mvc/app/models/OPNsense/UserIdentity/UserIdentity.xml'
 APPCONTROL_MODEL = '/usr/local/opnsense/mvc/app/models/OPNsense/AppControl/AppControl.xml'
+
+
+def installed():
+    """{'identity': bool, 'appcontrol': bool}: whether each plugin is installed, by its model's file
+    (Sources::installed())."""
+    return {'identity': os.path.exists(IDENTITY_MODEL), 'appcontrol': os.path.exists(APPCONTROL_MODEL)}
 
 
 def items(value):
@@ -110,17 +118,19 @@ def rows(root):
     return out
 
 
-def plugins(root):
-    """{'identity': None | True | False, 'appcontrol': None | True | False}: None where the plugin has no
-    settings in config.xml; User Identity off unless its Enabled is 1, Application Control classifying
-    unless its classify is 0 (Sources::plugins())."""
+def plugins(root, found=None):
+    """{'identity': None | True | False, 'appcontrol': None | True | False}: None where the plugin is not
+    installed (found, installed()'s answer, read from the model files when not given), whatever settings its
+    removal left; User Identity off unless its Enabled is 1 - never set, off - Application Control
+    classifying unless its classify is 0 - never set, on (Sources::plugins())."""
+    found = installed() if found is None else found
     out = {'identity': None, 'appcontrol': None}
     identity = root.find('OPNsense/UserIdentity') if root is not None else None
     appcontrol = root.find('OPNsense/AppControl') if root is not None else None
-    if identity is not None:
-        out['identity'] = _text(identity.find('general'), 'enabled', '0').strip(TRIM) == '1'
-    if appcontrol is not None:
-        general = appcontrol.find('general')
+    if found.get('identity'):
+        out['identity'] = identity is not None and _text(identity.find('general'), 'enabled', '0').strip(TRIM) == '1'
+    if found.get('appcontrol'):
+        general = appcontrol.find('general') if appcontrol is not None else None
         out['appcontrol'] = general is None or _text(general, 'classify', '1').strip(TRIM) == '1'
     return out
 
@@ -206,9 +216,9 @@ def resolve(cls, found_aliases, found_rows, found_plugins):
     return out
 
 
-def resolve_all(classes, root):
-    """{uuid: resolve()} for each class, config.xml read once."""
-    found_aliases, found_rows, found_plugins = aliases(root), rows(root), plugins(root)
+def resolve_all(classes, root, found=None):
+    """{uuid: resolve()} for each class, config.xml read once; found as plugins() takes it."""
+    found_aliases, found_rows, found_plugins = aliases(root), rows(root), plugins(root, found)
     return {c['uuid']: resolve(c, found_aliases, found_rows, found_plugins) for c in classes}
 
 

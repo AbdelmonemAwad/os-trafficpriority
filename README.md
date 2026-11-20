@@ -200,7 +200,10 @@ for the page and the switch):
 - **the page** - the Applied tab's Their tables column: each group, user, application and category of a
   class, with its table and how many addresses pf holds in it now (`pfctl -t <table> -T show`), or why
   it has none. The Classes tab says when os-useridentity or os-appcontrol is not installed: Groups and
-  users, or Applications and Application categories, then offer nothing.
+  users, or Applications and Application categories, then offer nothing. Installed is read from each
+  plugin's model file, by the page, the dialog and the rules hook alike - each plugin's removal leaves its
+  settings in config.xml, its rows and its Enabled among them - and a choice saved before a removal stays
+  in the class, marked as not installed.
 
 ## The switch's queues
 

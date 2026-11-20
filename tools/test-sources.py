@@ -5,12 +5,14 @@
 OPNsense keeps them - User Identity's group and user rows and its aliases (uid_..., "User Identity: "),
 Application Control's aliases of applications and categories ("Application Control: ...") - in the same
 cases tools/test-rules.php gives the rules hook's Sources.php: each table taken only as its plugin's own,
-External and switched on, while that plugin is on and the row is switched on; why each other one has none;
-a table named twice taken once; and a class with no table on one side idle.
+External and switched on, while that plugin is installed - its model's file there, whatever settings its
+removal left in config.xml - and on, and the row is switched on; why each other one has none; a table named
+twice taken once; and a class with no table on one side idle.
 
     python3 tools/test-sources.py"""
 import os
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -67,9 +69,12 @@ def config(identity='1', classify='1', aliases=None, extra=''):
                          '</opnsense>' % (who, apps, body, extra))
 
 
-def resolve(cls, root=None):
+BOTH = {'identity': True, 'appcontrol': True}       # both installed: their model files there
+
+
+def resolve(cls, root=None, found=None):
     root = config() if root is None else root
-    return sources.resolve(cls, sources.aliases(root), sources.rows(root), sources.plugins(root))
+    return sources.resolve(cls, sources.aliases(root), sources.rows(root), sources.plugins(root, found or BOTH))
 
 
 def whys(found):
@@ -86,16 +91,32 @@ check('names: a line break or another control character - None',
       [sources.names('Zo\nom'), sources.names('Vo\x01IP'), sources.names('x' * 129)], [None, None, None])
 check('names: 128 bytes, and a name of letters not Latin: taken', [len(sources.names('x' * 128)[0]),
                                                                   sources.names(chr(0x627) + chr(0x628))], [128, [chr(0x627) + chr(0x628)]])
-check('plugins: both on', sources.plugins(config()), {'identity': True, 'appcontrol': True})
+check('plugins: both on', sources.plugins(config(), BOTH), {'identity': True, 'appcontrol': True})
 check('plugins: User Identity off, Application Control not classifying',
-      sources.plugins(config('0', '0')), {'identity': False, 'appcontrol': False})
-check('plugins: neither installed', sources.plugins(config('', '')), {'identity': None, 'appcontrol': None})
+      sources.plugins(config('0', '0'), BOTH), {'identity': False, 'appcontrol': False})
+check('plugins: neither installed - their settings left in config.xml, as their removal leaves them - none',
+      sources.plugins(config(), {'identity': False, 'appcontrol': False}), {'identity': None, 'appcontrol': None})
+check('plugins: both installed and never set - User Identity off, Application Control classifying: their defaults',
+      sources.plugins(config('', ''), BOTH), {'identity': False, 'appcontrol': True})
 check('plugins: Application Control with no classify set classifies, as its hook has it',
-      sources.plugins(ET.fromstring('<opnsense><OPNsense><AppControl><general/></AppControl></OPNsense></opnsense>')),
-      {'identity': None, 'appcontrol': True})
+      sources.plugins(ET.fromstring('<opnsense><OPNsense><AppControl><general/></AppControl></OPNsense></opnsense>'), BOTH),
+      {'identity': False, 'appcontrol': True})
 check('plugins: an empty classify is off, as PHP reads it',
       sources.plugins(ET.fromstring('<opnsense><OPNsense><AppControl><general><classify/></general></AppControl>'
-                                    '</OPNsense></opnsense>'))['appcontrol'], False)
+                                    '</OPNsense></opnsense>'), BOTH)['appcontrol'], False)
+with tempfile.TemporaryDirectory() as tmp:
+    model = os.path.join(tmp, 'UserIdentity.xml')
+    with open(model, 'w', encoding='utf-8') as handle:
+        handle.write('<model/>')
+    saved = sources.IDENTITY_MODEL, sources.APPCONTROL_MODEL
+    sources.IDENTITY_MODEL, sources.APPCONTROL_MODEL = model, os.path.join(tmp, 'none.xml')
+    check('installed: by each plugin\'s model file - plugins() reads them when not told',
+          (sources.installed(), sources.plugins(config())), ({'identity': True, 'appcontrol': False},
+                                                              {'identity': True, 'appcontrol': None}))
+    sources.IDENTITY_MODEL, sources.APPCONTROL_MODEL = saved
+check('installed: the model files where each plugin installs them', (sources.IDENTITY_MODEL, sources.APPCONTROL_MODEL),
+      ('/usr/local/opnsense/mvc/app/models/OPNsense/UserIdentity/UserIdentity.xml',
+       '/usr/local/opnsense/mvc/app/models/OPNsense/AppControl/AppControl.xml'))
 check('rows: by uuid, groups and users, switched on or off',
       {u: (r['kind'], r['alias'], r['enabled']) for u, r in sources.rows(config()).items() if u in (G_STAFF, U_OFF)},
       {G_STAFF: ('group', 'uid_staff', True), U_OFF: ('user', 'uid_carol', False)})
@@ -123,24 +144,32 @@ check('...each item with its kind and name', [(i['kind'], i['name']) for i in fo
       [('group', 'Staff'), ('user', 'alice'), ('application', 'Zoom'), ('application', 'Teams'), ('category', 'VoIP')])
 found = resolve({'users': U_ALICE + ',' + U_ALICE.upper()})
 check('a user named twice: taken once', found['from'], ['uid_alice'])
-for what, cls, root, want in (
-        ('User Identity off', {'users': U_ALICE}, config('0'), 'identity-off'),
-        ('User Identity not installed', {'users': U_ALICE}, config(''), 'no-identity'),
-        ('a row switched off', {'users': U_OFF}, None, 'row-off'),
-        ('a row no longer there', {'users': U_GONE}, None, 'row-gone'),
-        ('a row not applied in User Identity yet', {'users': U_UNAPPLIED}, None, 'no-table'),
-        ('a row whose alias is the owner\'s', {'users': U_STRANGER}, None, 'not-its'),
-        ('a user\'s table switched off', {'users': U_BOB}, None, 'table-off'),
-        ('Application Control not installed', {'application': 'Zoom'}, config('1', ''), 'no-appcontrol'),
-        ('Application Control not classifying', {'application': 'Zoom'}, config('1', '0'), 'appcontrol-off'),
-        ('an application without a table', {'application': 'Netflix'}, None, 'no-table'),
-        ('an application\'s table switched off', {'application': 'YouTube'}, None, 'table-off'),
-        ('a category named as an application', {'application': 'VoIP'}, None, 'no-table'),
-        ('an application named as a category', {'categories': 'Zoom'}, None, 'no-table')):
-    found = resolve(cls, root)
+LEFT = [a for a in ALIASES if not a[0].startswith('uid_')]      # User Identity's aliases gone, as its removal leaves it
+for what, cls, root, want, found_ in (
+        ('User Identity off', {'users': U_ALICE}, config('0'), 'identity-off', None),
+        ('User Identity installed and never set - off, its default', {'users': U_ALICE}, config(''), 'identity-off', None),
+        ('User Identity removed, its settings left as its removal leaves them (P6)', {'users': U_ALICE},
+         config(aliases=LEFT), 'no-identity', {'identity': False, 'appcontrol': True}),
+        ('User Identity not installed, its aliases still there', {'users': U_ALICE}, None, 'no-identity',
+         {'identity': False, 'appcontrol': True}),
+        ('a row switched off', {'users': U_OFF}, None, 'row-off', None),
+        ('a row no longer there', {'users': U_GONE}, None, 'row-gone', None),
+        ('a row not applied in User Identity yet', {'users': U_UNAPPLIED}, None, 'no-table', None),
+        ('a row whose alias is the owner\'s', {'users': U_STRANGER}, None, 'not-its', None),
+        ('a user\'s table switched off', {'users': U_BOB}, None, 'table-off', None),
+        ('Application Control not installed, its settings and an alias of its left', {'application': 'Zoom'}, None,
+         'no-appcontrol', {'identity': True, 'appcontrol': False}),
+        ('Application Control not classifying', {'application': 'Zoom'}, config('1', '0'), 'appcontrol-off', None),
+        ('an application without a table', {'application': 'Netflix'}, None, 'no-table', None),
+        ('an application\'s table switched off', {'application': 'YouTube'}, None, 'table-off', None),
+        ('a category named as an application', {'application': 'VoIP'}, None, 'no-table', None),
+        ('an application named as a category', {'categories': 'Zoom'}, None, 'no-table', None)):
+    found = resolve(cls, root, found_)
     side = found['from'] if 'users' in cls else found['to']
     check(what + ': no table, why said, the class idle',
           (side, [i['why'] for i in found['items']], sources.idle(found)), ([], [want], True))
+check('Application Control installed and never set - classifying, its default - its table there: taken',
+      resolve({'application': 'Zoom'}, config('1', ''))['to'], ['appcontrol_Zoom'])
 found = resolve({'users': U_ALICE, 'application': 'Netflix'})
 check('a user with a table, no application with one: idle, the applications\' side', (sources.idle(found),
                                                                                       sources.idle_side(found)), (True, 'apps'))
@@ -170,7 +199,7 @@ root = ET.fromstring('<opnsense><OPNsense><UserIdentity><general><enabled>1</ena
                      'own list</description></alias></aliases></Alias></Firewall></OPNsense></opnsense>' % U_ALICE)
 check('an External alias of the row\'s name, described as the owner\'s and not as User Identity\'s: not taken',
       whys(resolve({'users': U_ALICE}, root)), [(U_ALICE, '', 'not-its')])
-all_ = sources.resolve_all([{'uuid': 'a', 'users': U_GONE}, {'uuid': 'b', 'application': 'Zoom'}], config())
+all_ = sources.resolve_all([{'uuid': 'a', 'users': U_GONE}, {'uuid': 'b', 'application': 'Zoom'}], config(), BOTH)
 check('resolve_all: each class by its uuid, config.xml read once', {u: sources.idle(r) for u, r in all_.items()},
       {'a': True, 'b': False})
 

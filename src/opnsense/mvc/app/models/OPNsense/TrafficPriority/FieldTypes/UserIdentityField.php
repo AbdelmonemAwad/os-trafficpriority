@@ -9,6 +9,7 @@ namespace OPNsense\TrafficPriority\FieldTypes;
 
 use OPNsense\Base\FieldTypes\BaseListField;
 use OPNsense\Core\Config;
+use OPNsense\TrafficPriority\Sources;
 
 /**
  * The groups and users of os-useridentity a class takes (top-08): its group rows and its user rows, read
@@ -16,11 +17,13 @@ use OPNsense\Core\Config;
  * whatever its name becomes - and labelled with its name, its kind and the alias of its table, as
  * os-blocklists' web policies by user offer them. Read from the configuration, not through
  * os-useridentity's model, so the field loads where os-useridentity is not installed: it then offers
- * nothing, and the page says why. A row switched off in User Identity is offered, marked so - a class
- * takes no table through it while it is off. A uuid saved that no row holds now (the row deleted in User
- * Identity) stays an option, marked so, rather than vanish from the field and from the next save; the
- * rules hook takes no table by it (OPNsense\TrafficPriority\Sources). A value that is not an option fails
- * the model's validation, as an OptionField's does.
+ * nothing, and the page says why - installed by its model's file, as the rules hook reads it
+ * (Sources::installed()), since its removal leaves its rows in config.xml. A row saved before the removal
+ * stays an option, marked as not installed. A row switched off in User Identity is offered, marked so - a
+ * class takes no table through it while it is off. A uuid saved that no row holds now (the row deleted in
+ * User Identity) stays an option, marked so, rather than vanish from the field and from the next save;
+ * the rules hook takes no table by it (OPNsense\TrafficPriority\Sources). A value that is not an option
+ * fails the model's validation, as an OptionField's does.
  */
 class UserIdentityField extends BaseListField
 {
@@ -57,10 +60,22 @@ class UserIdentityField extends BaseListField
     }
 
     /**
+     * The rows offered: none where os-useridentity is not installed.
+     * @param \SimpleXMLElement|null $root the configuration's root, config.xml's by default
+     * @param bool|null $installed whether os-useridentity is; by its model's file when not given
+     * @return array uuid => label, sorted by label
+     */
+    public static function rowOptions($root = null, $installed = null)
+    {
+        return ($installed ?? Sources::installed()['identity']) ? self::rowLabels($root) : [];
+    }
+
+    /**
+     * Every row's label, as config.xml holds the rows, installed or not.
      * @param \SimpleXMLElement|null $root the configuration's root, config.xml's by default
      * @return array uuid => label, sorted by label
      */
-    public static function rowOptions($root = null)
+    public static function rowLabels($root = null)
     {
         $root = $root ?? Config::getInstance()->object();
         $found = [];
@@ -96,14 +111,21 @@ class UserIdentityField extends BaseListField
     protected function actionPostLoadingEvent()
     {
         if (self::$cache === null) {
-            self::$cache = self::rowOptions();
+            $installed = Sources::installed()['identity'];
+            $labels = self::rowLabels();
+            /* what is offered, and the rows a removal left, for the values saved before it */
+            self::$cache = [$installed ? $labels : [], $installed ? [] : $labels];
         }
-        $options = self::$cache;
-        /* a row saved that User Identity holds no more: kept, marked, so it is neither hidden nor dropped */
+        list($options, $left) = self::$cache;
+        /* a row saved that User Identity holds no more, or that it left behind when it was removed: kept,
+           marked, so it is neither hidden nor dropped */
         foreach (explode(',', (string)$this->internalValue) as $uuid) {
-            if ($uuid !== '' && !isset($options[$uuid]) && preg_match(self::UUID, $uuid)) {
-                $options[$uuid] = self::fill(gettext('%s (not in User Identity now)'), '%s (not in User Identity now)', $uuid);
+            if ($uuid === '' || isset($options[$uuid]) || !preg_match(self::UUID, $uuid)) {
+                continue;
             }
+            $options[$uuid] = isset($left[$uuid]) ?
+                self::fill(gettext('%s - User Identity is not installed'), '%s - User Identity is not installed', $left[$uuid]) :
+                self::fill(gettext('%s (not in User Identity now)'), '%s (not in User Identity now)', $uuid);
         }
         $this->internalOptionList = $options;
     }

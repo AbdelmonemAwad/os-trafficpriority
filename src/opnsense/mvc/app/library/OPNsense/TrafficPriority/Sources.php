@@ -30,15 +30,17 @@ namespace OPNsense\TrafficPriority;
  * A table is taken only as the alias of the plugin it belongs to, External and switched on - one of
  * another name or another owner is no table, nor is one switched off, which its plugin switches off
  * rather than removes while something else names it, and no longer keeps - and only while that plugin
- * is on: User Identity's Enabled, Application Control's classifying (on unless set to 0). A group or a
- * user also needs its row there and switched on. Whatever is not, says why, in one word the page turns
- * into a sentence:
+ * is installed and on: User Identity's Enabled (off unless set), Application Control's classifying (on
+ * unless set to 0). Installed is its model's file there (installed()): each plugin's removal takes its
+ * files and its aliases away and leaves its settings in config.xml, Enabled among them, so its settings
+ * cannot say. A group or a user also needs its row there and switched on. Whatever is not, says why, in
+ * one word the page turns into a sentence:
  *
- *   no-identity       User Identity has no settings here: not installed, or never set
- *   identity-off      User Identity is off: it keeps no table
+ *   no-identity       User Identity is not installed: its model is not there, whatever settings it left
+ *   identity-off      User Identity is off, or never set: it keeps no table
  *   row-gone          no row of User Identity's holds that uuid now
  *   row-off           the row is switched off in User Identity
- *   no-appcontrol     Application Control has no settings here: not installed, or never set
+ *   no-appcontrol     Application Control is not installed: its model is not there
  *   appcontrol-off    Application Control is not classifying: it keeps no table
  *   no-table          the alias is not in Firewall: Aliases - not applied in that plugin yet, or for an
  *                     application, not chosen there for a table
@@ -59,6 +61,23 @@ class Sources
     /* an alias's name as OPNsense takes it - 31 characters at most, pf's table names (PF_TABLE_NAME_SIZE
        less the end) - and as the rule is given it: never anything that could break a line of the rules file */
     const TABLE = '/^[A-Za-z_][A-Za-z0-9_]{0,30}$/D';
+    /* where each plugin's model is while it is installed: its install/uninstall.sh takes the directory away */
+    const IDENTITY_MODEL = '/usr/local/opnsense/mvc/app/models/OPNsense/UserIdentity/UserIdentity.xml';
+    const APPCONTROL_MODEL = '/usr/local/opnsense/mvc/app/models/OPNsense/AppControl/AppControl.xml';
+
+    /* a stand-in for the tests: ['identity' => bool, 'appcontrol' => bool]; null reads the model files */
+    public static $installed = null;
+
+    /**
+     * Whether each plugin is installed: ['identity' => bool, 'appcontrol' => bool], by its model's file.
+     */
+    public static function installed()
+    {
+        if (is_array(self::$installed)) {
+            return ['identity' => !empty(self::$installed['identity']), 'appcontrol' => !empty(self::$installed['appcontrol'])];
+        }
+        return ['identity' => @is_file(self::IDENTITY_MODEL), 'appcontrol' => @is_file(self::APPCONTROL_MODEL)];
+    }
 
     /**
      * The items of a list field, comma-separated as OPNsense keeps them, each trimmed, empty ones left out.
@@ -176,20 +195,22 @@ class Sources
     }
 
     /**
-     * Whether each plugin has settings here, and is on: ['identity' => null | true | false, 'appcontrol'
-     * => null | true | false], null where it has none. User Identity is off unless its Enabled is 1;
-     * Application Control classifies unless its classify is 0 - an element there and empty is off, as its
-     * own hook reads it (appcontrol_enabled()).
+     * Whether each plugin is installed, and on: ['identity' => null | true | false, 'appcontrol' => null |
+     * true | false], null where it is not installed (installed()), whatever settings its removal left.
+     * User Identity is off unless its Enabled is 1 - never set, off, its model's default; Application
+     * Control classifies unless its classify is 0 - an element there and empty is off, as its own hook
+     * reads it (appcontrol_enabled()), and none there at all is on, its model's default.
      */
     public static function plugins($config)
     {
+        $installed = self::installed();
         $identity = $config['OPNsense']['UserIdentity'] ?? null;
         $appcontrol = $config['OPNsense']['AppControl'] ?? null;
         $out = ['identity' => null, 'appcontrol' => null];
-        if (is_array($identity) || is_string($identity)) {
-            $out['identity'] = trim(self::text($identity['general'] ?? null, 'enabled', '0')) === '1';
+        if ($installed['identity']) {
+            $out['identity'] = is_array($identity) && trim(self::text($identity['general'] ?? null, 'enabled', '0')) === '1';
         }
-        if (is_array($appcontrol) || is_string($appcontrol)) {
+        if ($installed['appcontrol']) {
             $general = is_array($appcontrol) ? ($appcontrol['general'] ?? null) : null;
             $out['appcontrol'] = !is_array($general) || trim(self::text($general, 'classify', '1')) === '1';
         }

@@ -11,7 +11,9 @@
  * categories - os-appcontrol keeps a table for, by the name nDPI gives, from its own aliases in Firewall:
  * Aliases as OPNsense\TrafficPriority\Sources reads them - one switched off marked, nothing where
  * os-appcontrol has none, a name saved that no table holds now kept and marked, a name a list field could
- * not hold not offered. OPNsense's classes are stood in for - the configuration by a tree of the test's
+ * not hold not offered. And with either plugin removed - its model's file gone, its settings left in
+ * config.xml - nothing offered, and what was saved before kept, marked as not installed (Sources::$installed
+ * stands in for the files). OPNsense's classes are stood in for - the configuration by a tree of the test's
  * own, as the runner's PHP need not have its XML extension - and gettext by a catalogue of the test's own:
  *
  *   php tools/test-fields.php
@@ -231,6 +233,10 @@ namespace {
     use OPNsense\Core\Config;
     use OPNsense\TrafficPriority\FieldTypes\AppControlField;
     use OPNsense\TrafficPriority\FieldTypes\UserIdentityField;
+    use OPNsense\TrafficPriority\Sources;
+
+    /* both plugins installed - their model files there - unless a case says otherwise */
+    Sources::$installed = ['identity' => true, 'appcontrol' => true];
 
     /* the field's static cache emptied, so each case reads its own configuration */
     function fresh($class)
@@ -266,6 +272,18 @@ namespace {
     check(($translated[G_STAFF] ?? '') === 'Staff [group uid_staff]' && ($translated[U_ALICE] ?? '') === 'alice (a user, uid_alice)',
         'a translation filled; one whose %s do not fit falls back to the English');
     $GLOBALS['translations'] = [];
+    /* os-useridentity removed: its rows stay in config.xml, as its uninstall.sh leaves its settings (P6) */
+    check(UserIdentityField::rowOptions(config($identity), false) === [],
+        'User Identity not installed, its rows left in config.xml: nothing offered');
+    Sources::$installed = ['identity' => false, 'appcontrol' => true];
+    fresh(UserIdentityField::class);
+    $loaded = (new UserIdentityField())->loaded(U_ALICE . ',' . U_GONE);
+    check($loaded === [U_ALICE => 'alice (a user, uid_alice) - User Identity is not installed',
+        U_GONE => U_GONE . ' (not in User Identity now)'],
+        'User Identity not installed: no row offered; a row saved before its removal kept, named and marked as not installed; ' .
+        'one no row holds marked as before: ' . json_encode($loaded));
+    Sources::$installed = ['identity' => true, 'appcontrol' => true];
+    fresh(UserIdentityField::class);
 
     /* ---- Application Control's applications and categories ---- */
     $aliases = [
@@ -300,6 +318,15 @@ namespace {
     $field = new AppControlField();
     $field->setKind('nonsense');
     check(isset($field->loaded('')['Zoom']), 'an unknown Kind: applications, the default');
+    /* os-appcontrol removed, an alias of its left (switched off where something still names it) */
+    check(AppControlField::nameOptions('application', config(null, $aliases), false) === [],
+        'Application Control not installed: nothing offered, whatever aliases of its are left');
+    Sources::$installed = ['identity' => true, 'appcontrol' => false];
+    fresh(AppControlField::class);
+    $loaded = (new AppControlField())->loaded('Zoom');
+    check($loaded === ['Zoom' => 'Zoom - Application Control is not installed'],
+        'Application Control not installed: a name saved before its removal kept, marked as not installed: ' . json_encode($loaded));
+    Sources::$installed = ['identity' => true, 'appcontrol' => true];
 
     echo ($failed ? "$failed of $checks checks failed\n" : "$checks checks passed\n");
     exit($failed ? 1 : 0);

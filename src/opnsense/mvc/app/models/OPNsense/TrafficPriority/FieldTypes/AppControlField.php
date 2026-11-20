@@ -19,7 +19,9 @@ use OPNsense\TrafficPriority\Sources;
  * category of the installed nDPI while it classifies, and one for each application chosen there - in its
  * Application tables, Blocked applications or Rules - at its Apply. Read from the configuration, not
  * through os-appcontrol's model, so the field loads where os-appcontrol is not installed: it then offers
- * nothing, and the page says why. A table switched off there is offered, marked so - a class takes
+ * nothing, whatever aliases are left, and the page says why - installed by its model's file, as the rules
+ * hook reads it (Sources::installed()); a name saved before its removal stays an option, marked as not
+ * installed. A table switched off there is offered, marked so - a class takes
  * nothing through it while it is off. A name saved that no table holds now stays an option, marked so,
  * rather than vanish from the field and from the next save; the rules hook takes no table by it. A value
  * that is not an option fails the model's validation, as an OptionField's does.
@@ -66,10 +68,14 @@ class AppControlField extends BaseListField
     /**
      * @param string $kind application or category
      * @param \SimpleXMLElement|null $root the configuration's root, config.xml's by default
-     * @return array name => label, sorted by label
+     * @param bool|null $installed whether os-appcontrol is; by its model's file when not given
+     * @return array name => label, sorted by label; none where os-appcontrol is not installed
      */
-    public static function nameOptions($kind, $root = null)
+    public static function nameOptions($kind, $root = null, $installed = null)
     {
+        if (!($installed ?? Sources::installed()['appcontrol'])) {
+            return [];
+        }
         $root = $root ?? Config::getInstance()->object();
         $aliases = [];
         if (isset($root->OPNsense->Firewall->Alias->aliases->alias)) {
@@ -101,14 +107,17 @@ class AppControlField extends BaseListField
     protected function actionPostLoadingEvent()
     {
         if (!isset(self::$cache[$this->kind])) {
-            self::$cache[$this->kind] = self::nameOptions($this->kind);
+            $installed = Sources::installed()['appcontrol'];
+            self::$cache[$this->kind] = [self::nameOptions($this->kind, null, $installed), $installed];
         }
-        $options = self::$cache[$this->kind];
-        /* a name saved that Application Control keeps no table for now: kept, marked, neither hidden nor dropped */
+        list($options, $installed) = self::$cache[$this->kind];
+        /* a name saved that Application Control keeps no table for now, or saved before its removal: kept,
+           marked, neither hidden nor dropped */
         foreach (explode(',', (string)$this->internalValue) as $name) {
             if ($name !== '' && !isset($options[$name]) && self::plain($name) === $name) {
-                $options[$name] = self::fill(gettext('%s (no table in Application Control now)'),
-                    '%s (no table in Application Control now)', $name);
+                $options[$name] = $installed ?
+                    self::fill(gettext('%s (no table in Application Control now)'), '%s (no table in Application Control now)', $name) :
+                    self::fill(gettext('%s - Application Control is not installed'), '%s - Application Control is not installed', $name);
             }
         }
         $this->internalOptionList = $options;
