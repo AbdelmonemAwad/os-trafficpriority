@@ -28,10 +28,11 @@ namespace OPNsense\TrafficPriority;
  *                       named appcontrol_cat_
  *
  * A table is taken only as the alias of the plugin it belongs to, External and switched on - one of
- * another name or another owner, or switched off, which that plugin keeps empty, is no table - and only
- * while that plugin is on: User Identity's Enabled, Application Control's classifying (on unless set
- * to 0). A group or a user also needs its row there and switched on. Whatever is not, says why, in one
- * word the page turns into a sentence:
+ * another name or another owner is no table, nor is one switched off, which its plugin switches off
+ * rather than removes while something else names it, and no longer keeps - and only while that plugin
+ * is on: User Identity's Enabled, Application Control's classifying (on unless set to 0). A group or a
+ * user also needs its row there and switched on. Whatever is not, says why, in one word the page turns
+ * into a sentence:
  *
  *   no-identity       User Identity has no settings here: not installed, or never set
  *   identity-off      User Identity is off: it keeps no table
