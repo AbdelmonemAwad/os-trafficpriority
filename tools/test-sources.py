@@ -85,7 +85,7 @@ check('names: as written, each once', sources.names('Zoom,Teams,Zoom'), ['Zoom',
 check('names: a line break or another control character - None',
       [sources.names('Zo\nom'), sources.names('Vo\x01IP'), sources.names('x' * 129)], [None, None, None])
 check('names: 128 bytes, and a name of letters not Latin: taken', [len(sources.names('x' * 128)[0]),
-                                                                  sources.names('اب')], [128, ['اب']])
+                                                                  sources.names(chr(0x627) + chr(0x628))], [128, [chr(0x627) + chr(0x628)]])
 check('plugins: both on', sources.plugins(config()), {'identity': True, 'appcontrol': True})
 check('plugins: User Identity off, Application Control not classifying',
       sources.plugins(config('0', '0')), {'identity': False, 'appcontrol': False})
