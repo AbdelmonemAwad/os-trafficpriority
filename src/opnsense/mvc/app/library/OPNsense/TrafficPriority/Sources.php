@@ -142,6 +142,13 @@ class Sources
     private static function text($node, $key, $default = '')
     {
         $value = is_array($node) ? ($node[$key] ?? null) : null;
+        /* the legacy parser reads every element named as one of its list tags as a list, wherever it is -
+           config.inc's listtags() holds alias, for Firewall: Aliases - so a User Identity row's <alias> comes
+           as a list of one; read as no text, every group and user had no table (found by the lab on the
+           second XGS 3300, 2026-11-20) */
+        if (is_array($value) && array_is_list($value) && count($value) === 1) {
+            $value = $value[0];
+        }
         return is_string($value) ? $value : $default;
     }
 

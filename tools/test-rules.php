@@ -763,6 +763,23 @@ namespace {
     check($found['from'] === [] && ($found['items'][0]['why'] ?? '') === 'not-its',
         'an External alias of the row\'s name, described as the owner\'s and not as User Identity\'s: not taken: ' .
         json_encode($found));
+    /* config.inc's parser reads a row's <alias> as a list of one, alias being one of its list tags (for
+       Firewall: Aliases): the lab on the second XGS 3300 found every group and user without a table so */
+    $parsedConfig = ['OPNsense' => [
+        'UserIdentity' => ['general' => ['enabled' => '1'],
+            'groups' => ['group' => ['@attributes' => ['uuid' => G_STAFF], 'enabled' => '1', 'name' => 'Staff',
+                'alias' => ['uid_staff']]],
+            'users' => ['user' => [
+                ['@attributes' => ['uuid' => U_ALICE], 'enabled' => '1', 'name' => 'alice', 'alias' => ['uid_alice']],
+                ['@attributes' => ['uuid' => U_BOB], 'enabled' => '1', 'name' => 'bob', 'alias' => ['uid_bob']]]]],
+        'Firewall' => ['Alias' => ['aliases' => ['alias' => [
+            ['name' => 'uid_staff', 'type' => 'external', 'enabled' => '1', 'description' => 'User Identity: group Staff'],
+            ['name' => 'uid_alice', 'type' => 'external', 'enabled' => '1', 'description' => 'User Identity: user alice'],
+            ['name' => 'uid_bob', 'type' => 'external', 'enabled' => '1', 'description' => 'User Identity: user bob']]]]]]];
+    $found = Sources::resolveIn(['users' => G_STAFF . ',' . U_ALICE], $parsedConfig);
+    check($found['from'] === ['uid_staff', 'uid_alice'] && ($found['items'][0]['why'] ?? 'x') === '' &&
+        ($found['items'][1]['why'] ?? 'x') === '',
+        'a row\'s alias as config.inc parses it, a list of one: its table taken, for a group and a user: ' . json_encode($found));
     check(Marking::rules(cls(U1, ['users' => U_ALICE]), U1, Marking::markKey()) === [] &&
         Marking::rules(cls(U1, ['users' => U_ALICE]), U1, Marking::markKey(), ['from' => ["uid_a\nb"], 'to' => null]) === [],
         'rules(): no tables given, or one no table could be named: no rule');
