@@ -464,8 +464,14 @@ namespace {
     ]];
     $answer = ['enabled' => true, 'pf' => true, 'refused' => false, 'marked' => 2, 'hardware' => $hardware, 'classes' => [
         ['uuid' => U1, 'written' => 2, 'not_placed' => 0, 'rules' => 2, 'states' => 4, 'created' => 19,
-            'packets' => 48420, 'bytes' => 9924690],
-        ['uuid' => strtolower($u4), 'written' => 1, 'not_placed' => 0, 'rules' => 0],
+            'packets' => 48420, 'bytes' => 9924690, 'idle' => '', 'tables' => [
+                ['kind' => 'user', 'key' => '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a02', 'name' => 'alice', 'table' => 'uid_alice',
+                    'why' => '', 'count' => 1],
+                'not an item',
+                ['kind' => 'application', 'key' => 'Netflix', 'name' => 'Netflix', 'table' => '', 'why' => 'no-table',
+                    'count' => null]]],
+        ['uuid' => strtolower($u4), 'written' => 1, 'not_placed' => 0, 'rules' => 0, 'idle' => 'users', 'tables' => 'not a list'],
+        ['uuid' => '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a05', 'idle' => 'something else'],
     ]];
     Backend::$answers = ['trafficpriority status check' => json_encode($answer)];
     Backend::$asked = [];
@@ -502,6 +508,11 @@ namespace {
     check(Backend::$asked === ['trafficpriority status'], 'applied: the grid asks without reading the switch');
     check(($one['switch']['queue'] ?? null) === 7 && $one['switch_not'] === '' && $rows[U2]['switch'] === null,
         'applied: each class\'s switch queue from status.py, none for a class it does not name');
+    check(array_column($one['tables'], 'table') === ['uid_alice', ''] && $one['tables'][0]['count'] === 1 && $one['idle'] === '',
+        'applied: a class\'s tables from status.py, each item with its table and count - one that is no item left out');
+    check($rows[strtolower($u4)]['idle'] === 'users' && $rows[strtolower($u4)]['tables'] === [] &&
+        $rows['6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a05']['idle'] === '' && $rows[U2]['tables'] === [],
+        'applied: the side with no table passed on, anything else none; tables that are no list, and none, empty');
     $shaper = (new ServiceController())->searchShaperAction();
     check(count($shaper['rows']) === 2 && $shaper['rows'][0]['hardware'][0]['port'] === 'Port2' &&
         $shaper['rows'][1]['hardware'] === [] && $shaper['rows'][1]['host'][0]['why'] === 'unmarked' &&

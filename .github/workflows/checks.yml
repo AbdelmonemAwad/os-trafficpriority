@@ -122,6 +122,12 @@ jobs:
       - name: The switch set from Apply, and put back
         run: python3 tools/test-apply.py
 
+      # The page's script under node, with stand-ins for jQuery and OPNsense's page helpers: the tables of a
+      # class's groups and users, applications and categories, a class with no table on one side, and the
+      # lines that say os-useridentity or os-appcontrol is not installed. GitHub's runners have node.
+      - name: "The page: each class's tables, and the other plugins not installed"
+        run: python3 tools/test-page.py
+
       # install/install.sh copies src/ whole; install/uninstall.sh names what it removes.
       - name: Every file the installer lays down is removed by the uninstaller
         run: sh tools/check-uninstall.sh .

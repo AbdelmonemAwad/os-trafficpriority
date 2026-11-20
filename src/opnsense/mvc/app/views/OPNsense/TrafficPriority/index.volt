@@ -84,7 +84,30 @@
             'address': "{{ lang._('address field not readable') }}",
             'everything': "{{ lang._('nothing narrows it: it would mark every connection') }}",
             'family': "{{ lang._('no source and destination of its IP version') }}",
-            'key': "{{ lang._('this OPNsense writes no mark on a rule') }}"
+            'key': "{{ lang._('this OPNsense writes no mark on a rule') }}",
+            'users': "{{ lang._('groups and users field not readable') }}",
+            'application': "{{ lang._('application or category field not readable') }}",
+            'sources': "{{ lang._('groups and users beside a source') }}",
+            'destinations': "{{ lang._('applications or categories beside a destination') }}"
+        };
+
+        /* Why a group, a user, an application or a category has no table now (Sources, sources.py). */
+        const tableWhy = {
+            'no-identity': "{{ lang._('User Identity is not installed') }}",
+            'identity-off': "{{ lang._('User Identity is off') }}",
+            'row-gone': "{{ lang._('no longer in User Identity') }}",
+            'row-off': "{{ lang._('switched off in User Identity') }}",
+            'no-appcontrol': "{{ lang._('Application Control is not installed') }}",
+            'appcontrol-off': "{{ lang._('Application Control is not classifying') }}",
+            'no-table': "{{ lang._('no table: not applied in its plugin yet - or, an application, not chosen there for a table') }}",
+            'not-its': "{{ lang._('an alias of its name is not User Identity\'s own') }}",
+            'table-off': "{{ lang._('its table is switched off') }}"
+        };
+        const tableKind = {
+            'group': "{{ lang._('%s (a group)') }}",
+            'user': "{{ lang._('%s (a user)') }}",
+            'application': "{{ lang._('%s (an application)') }}",
+            'category': "{{ lang._('%s (a category)') }}"
         };
 
         /* A text with %s in it, each filled in turn. */
@@ -170,7 +193,28 @@
             if (sw.minimum_why === 'not-hardware') {
                 text += ' · <span class="text-warning">' + "{{ lang._('its minimum is not held: no queue of its own') }}" + '</span>';
             }
+            if (sw.idle && sw.why === 'hardware') {
+                text += ' · <span class="text-muted">' + "{{ lang._('kept while it has no table: it marks nothing meanwhile') }}" + '</span>';
+            }
             return text;
+        }
+
+        /* A class's groups and users, applications and categories: each one's table and what pf holds in it
+           now, or why it has none (status.py's tables). */
+        function tables(row) {
+            if (!row.tables || !row.tables.length) {
+                return '<span class="text-muted">-</span>';
+            }
+            return row.tables.map(function (item) {
+                const name = fill(tableKind[item.kind] || '%s', item.name);
+                if (!item.table) {
+                    return name + ': <span class="text-warning">' + (tableWhy[item.why] || item.why) + '</span>';
+                }
+                if (item.count === null || item.count === undefined) {
+                    return name + ': ' + item.table;
+                }
+                return name + ': ' + fill("{{ lang._('%s (addresses in it now: %s)') }}", item.table, count(item.count));
+            }).join('<br/>');
         }
 
         /* What the switch takes of a rule of Firewall: Shaper, and what stays with the host (shaper_map.py). */
@@ -309,6 +353,10 @@
             $('#tp-nokey').toggle(data.writes_mark === false);
             $('#tp-project').toggle(!!data.project);
             $('#tp-pf-alone').toggle(!data.project);
+            /* the lists the dialog offers are the other plugins': said when one is not installed */
+            const others = data.others || {};
+            $('#tp-no-identity').toggle(others.identity === false);
+            $('#tp-no-appcontrol').toggle(others.appcontrol === false);
         }
 
         function refresh() {
@@ -342,6 +390,11 @@
                             return '<span class="text-warning">' + "{{ lang._('no rule') }}" + ': ' +
                                 (problems[row.problem] || row.problem) + '</span>';
                         }
+                        if (row.idle) {
+                            return '<span class="text-warning">' + "{{ lang._('no rule') }}" + ': ' + (row.idle === 'users' ?
+                                "{{ lang._('none of its groups and users has a table now') }}" :
+                                "{{ lang._('none of its applications and categories has a table now') }}") + '</span>';
+                        }
                         const placed = row.not_placed ? ' · <span class="text-warning">' + count(row.not_placed) + ' ' +
                             "{{ lang._('not placed') }}" + '</span>' : '';
                         if (row.rules) {
@@ -354,6 +407,9 @@
                     },
                     number: function (column, row) {
                         return count(row[column.id]);
+                    },
+                    tables: function (column, row) {
+                        return tables(row);
                     },
                     queue: function (column, row) {
                         return place(row.switch, row.switch_not);
@@ -466,6 +522,12 @@
 <div class="tab-content content-box">
     <div id="classes" class="tab-pane active">
         {{ partial('layout_partials/base_bootgrid_table', formGridClass) }}
+        <div id="tp-no-identity" class="text-muted" style="display: none; padding: 0 15px 10px;">
+            {{ lang._('User Identity (os-useridentity) is not installed: Groups and users offers nothing, and a class that names some makes no rule.') }}
+        </div>
+        <div id="tp-no-appcontrol" class="text-muted" style="display: none; padding: 0 15px 10px;">
+            {{ lang._('Application Control (os-appcontrol) is not installed: Applications and Application categories offer nothing, and a class that names some makes no rule.') }}
+        </div>
     </div>
     <div id="applied" class="tab-pane">
         <table id="grid-applied" class="table table-condensed table-hover table-striped table-responsive">
@@ -476,6 +538,7 @@
                     <th data-column-id="description" data-formatter="name" data-type="string">{{ lang._('Class') }}</th>
                     <th data-column-id="dscp" data-type="string" data-width="9em">{{ lang._('DSCP') }}</th>
                     <th data-column-id="rules" data-formatter="inpf" data-type="string" data-sortable="false">{{ lang._('In pf') }}</th>
+                    <th data-column-id="tables" data-formatter="tables" data-type="string" data-sortable="false">{{ lang._('Their tables') }}</th>
                     <th data-column-id="states" data-formatter="number" data-type="numeric" data-width="9em">{{ lang._('Matched now') }}</th>
                     <th data-column-id="created" data-formatter="number" data-type="numeric" data-width="10em">{{ lang._('Matched since reload') }}</th>
                     <th data-column-id="packets" data-formatter="number" data-type="numeric" data-visible="false">{{ lang._('Packets') }}</th>
@@ -488,6 +551,9 @@
         </table>
         <div class="text-muted" style="padding: 0 15px 10px;">
             {{ lang._('Not in pf: class saved and not applied yet, or Traffic Priority off. Written, not loaded: the last filter reload wrote its rules and pf does not hold them. Not placed: OPNsense wrote its rule commented out - an interface not there, an address or a port it could not map.') }}
+        </div>
+        <div class="text-muted" style="padding: 0 15px 10px;">
+            {{ lang._('Their tables: the pf tables a class takes from User Identity and Application Control, each with how many addresses pf holds in it now - a group\'s or a user\'s are its devices, an application\'s or a category\'s the servers nDPI named as it - or why it has none. Neither plugin is written to here: each makes and fills its own tables, at its own Apply, and every filter reload, theirs among them, writes the classes\' rules again from the tables there. A class whose groups and users have no table, or whose applications and categories have none, makes no rule - on an XGS 3300 it keeps its switch queue, and marks again once its tables are there, with no Apply here. A connection keeps the mark it opened with: one opened before its device joined a user\'s table, or its server an application\'s, is not marked.') }}
         </div>
         <div class="text-muted" style="padding: 0 15px 10px;">
             {{ lang._('Matched now, Matched since reload, packets and bytes: what pf counted for the rules of each class. Every filter reload, an Apply among them, starts them again from 0 - packets and bytes too, unless the firewall keeps counters - while connections keep their mark; and a connection two classes match is counted under both, keeping the mark of the lower sequence. Marked now, above, counts each connection pf holds with a mark set coming in, once, whenever it opened, while a class marks. pfctl shows that a mark is set, not which one, so a normalization rule of yours setting any mark on connections coming in is counted too.') }}
