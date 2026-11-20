@@ -24,9 +24,10 @@ THE PLACES COME WITH THE FILTER RELOAD. While a class has a place in the switch,
 before every class's rule the one that sets every IPv4 connection's DSCP to 0, both ways
 (OPNsense\\TrafficPriority\\Hardware); the switch is given the classes' DSCPs only while the rules file
 pf was given holds it, from the classes it holds a rule for (hardware.from_rules(), places_of()) - and
-from those whose groups and users, or applications and categories, have no table now (sources.py), which
-keep their place as the hook keeps it. When pf refused that rule set, the switch is left as it is: the
-rules pf still holds are the set before it.
+from those the reload left idle, their groups and users, or applications and categories, with no table,
+which keep their place as the hook keeps it: the reload records each in the same file, as a line pf never
+reads (hardware.idle_in()). When pf refused that rule set, the switch is left as it is: the rules pf still
+holds are the set before it.
 
 WHERE NOTHING IS SET: without os-xgs-npu (a plain OPNsense: pf alone marks), or with an os-xgs-npu that
 has no switch tool yet; on the XGS 136 family, whose switch os-xgs-npu only reads (its bus is shared
@@ -49,7 +50,6 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hardware  # noqa: E402
 import shaper_map  # noqa: E402
-import sources  # noqa: E402
 
 CONFIG = os.environ.get('TP_CONFIG', '/conf/config.xml')
 PY = os.environ.get('TP_PYTHON', '/usr/local/bin/python3')
@@ -126,8 +126,11 @@ def decide(root, model, text=''):
     else:
         why_not = ''
     cleared, written = hardware.from_rules(text)
-    # a class whose groups and users, or applications and categories, have no table now keeps its place
-    idle = {uuid for uuid, found in sources.resolve_all(classes, root).items() if sources.idle(found)}
+    # a class the last filter reload left idle - its groups and users, or applications and categories,
+    # with no table, nothing else wrong with it - keeps its place, as that reload kept it: the same file
+    # records it, so this cannot take it from config.xml as saved since, nor give one to a class the
+    # reload gave none
+    idle = hardware.idle_in(text)
     places = hardware.places_of(classes, written, cleared, idle)
     marked = {hardware.dscp(c.get('dscp')) for c in hardware.ordered(classes)} - {None}
     first = hardware.plan(classes, places, written, idle=idle)

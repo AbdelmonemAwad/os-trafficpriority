@@ -227,10 +227,19 @@ namespace {
         return $lines;
     }
 
+    /* the plugin's rules: every line of its labels but the records of a class left idle */
     function ours($lines)
     {
         return array_values(array_filter($lines, function ($line) {
-            return strpos($line, 'label "trafficpriority-') !== false;
+            return strpos($line, 'label "trafficpriority-') !== false && strpos($line, 'label "trafficpriority-idle-') === false;
+        }));
+    }
+
+    /* the lines recording a class the reload left idle (Marking::idleRecord()) */
+    function records($lines)
+    {
+        return array_values(array_filter($lines, function ($line) {
+            return strpos($line, 'label "trafficpriority-idle-') !== false;
         }));
     }
 
@@ -673,14 +682,28 @@ namespace {
         $lines = render($case[0]);
         check(count(ours($lines)) === 0 && strpos(logged(), $case[1]) !== false,
             $what . ': no rule - none from every source or to every destination - and the log says why: ' . logged());
+        /* the reload records that it left the class idle, in the rules file, by a line pf never reads */
+        $want = '# match in inet from {any} to {any} label "trafficpriority-idle-' . U1 . '" # Traffic Priority: Voice - ' .
+            'makes no rule: no table for its ' . $case[1];
+        check(records($lines) === [$want], $what . ": the reload's record of the class left idle, commented out:\n" .
+            "      want $want\n      got  " . json_encode(records($lines)));
     }
+    $recorded = records(render(withTables([cls(U1, ['users' => U_GONE, 'description' => "Calls\nnow"])])));
+    check(count($recorded) === 1 && count(explode("\n", $recorded[0])) === 1 && strpos($recorded[0], '# ') === 0 &&
+        strpos($recorded[0], '# Traffic Priority: Calls now - makes no rule: ') !== false,
+        'a record\'s description with a line break: still one line, a comment: ' . json_encode($recorded));
+    check(records(render(withTables([cls(U1, ['users' => U_ALICE])]))) === [] &&
+        records(render(withTables([cls(U1, ['users' => U_GONE, 'enabled' => '0'])]))) === [] &&
+        records(render(cfg([cls(U1, ['users' => U_GONE])], '0'))) === [],
+        'no record for a class with its tables, for one switched off, or with Traffic Priority off');
     $part = ours(render(withTables([cls(U1, ['users' => U_ALICE . ',' . U_OFF . ',' . U_GONE, 'application' => 'Zoom,Netflix'])])));
     check(count($part) === 1 && strpos($part[0], 'from $uid_alice to $appcontrol_Zoom') !== false,
         'of several, the ones with a table: one rule for them: ' . json_encode($part));
     $idleAll = render(withTables([cls(U1, ['users' => U_ALICE]), cls(U2, ['description' => 'Port', 'users' => U_GONE])], '0'));
     check(count(ours($idleAll)) === 0 && count(array_filter($idleAll, function ($l) {
-        return strpos($l, ' from any ') !== false || strpos($l, 'from {any}') !== false;
-    })) === 0, 'no table for any of them: not one rule of the classes, none from any');
+        return strpos($l, '#') !== 0 && (strpos($l, ' from any ') !== false || strpos($l, 'from {any}') !== false);
+    })) === 0 && count(records($idleAll)) === 2,
+        'no table for any of them: not one rule of the classes, none from any pf reads - their two records commented out');
 
     /* the model's refusals, written by other means: no rule */
     foreach ([
@@ -693,8 +716,8 @@ namespace {
         $why = $fields['why'];
         unset($fields['why']);
         $lines = render(withTables([cls(U1, $fields)]));
-        check(count(ours($lines)) === 0 && strpos(logged(), $why) !== false && strpos(implode("\n", $lines), 'pass in quick all') === false,
-            json_encode($fields) . ': no rule, and the log says ' . $why);
+        check(count(ours($lines)) === 0 && strpos(logged(), $why) !== false && strpos(implode("\n", $lines), 'pass in quick all') === false &&
+            records($lines) === [], json_encode($fields) . ': no rule, no record of a class left idle, and the log says ' . $why);
     }
     /* tables alone narrow a class; a name that could break a line never reaches the rules file */
     check(count(ours(render(withTables([cls(U1, ['interface' => '', 'users' => U_ALICE])])))) === 1,
@@ -733,7 +756,31 @@ namespace {
     $placed = render(withTables([cls(U1, ['users' => U_ALICE])], '0'));
     check(count(array_filter($placed, function ($l) {
         return strpos($l, 'label "trafficpriority-clear"') !== false;
-    })) === 1 && count(ours($placed)) === 1, 'a class of users with no table now: the rule setting DSCP 0 alone - its place kept');
+    })) === 1 && count(ours($placed)) === 1 && count(records($placed)) === 1,
+        'a class of users with no table now: the rule setting DSCP 0 alone - its place kept - and the record of it, for apply.py');
+    /* the review's P1: a class with no table and something else wrong with it - a source port no rule could
+       hold, written by other means - has no place: neither the hook gives it one nor its record is written,
+       so apply.py, which takes the idle classes from the records, gives the next classes 7 and 6 too */
+    $p1 = [cls(U1, ['description' => 'Calls', 'sequence' => '10', 'users' => U_GONE, 'source_port' => '5o6O']),
+        cls(U2, ['description' => 'Games', 'sequence' => '20', 'protocol' => 'udp', 'destination_port' => '3074', 'dscp' => '34']),
+        cls(U3, ['description' => 'Video', 'sequence' => '30', 'protocol' => 'udp', 'destination_port' => '8801', 'dscp' => '26'])];
+    $lines = render(withTables($p1));
+    $byUuid = [];
+    foreach ($p1 as $c) {
+        $byUuid[$c['@attributes']['uuid']] = $c;
+    }
+    check(Hardware::places($byUuid) === [U1 => 'rule', U2 => 'hardware', U3 => 'hardware'] && Hardware::dscps($byUuid) === [34, 26] &&
+        records($lines) === [] && count(ours($lines)) === 3 && strpos(ours($lines)[0], 'trafficpriority-clear') !== false &&
+        strpos(logged(), 'class "Calls" makes no rule (port)') !== false,
+        'P1: Calls - no table, and a source port no rule could hold - no place and no record; Games and Video placed, 34 and 26: ' .
+        json_encode([Hardware::places($byUuid), records($lines), ours($lines)]));
+    $p1[0]['source_port'] = '';
+    $byUuid[U1] = $p1[0];
+    $lines = render(withTables($p1));
+    check(Hardware::places($byUuid) === [U1 => 'hardware', U2 => 'hardware', U3 => 'third'] && count(records($lines)) === 1 &&
+        strpos(records($lines)[0], 'trafficpriority-idle-' . U1) !== false,
+        'P1 with nothing else wrong: Calls idle keeps its place, 46 first, Video third - and its record written: ' .
+        json_encode([Hardware::places($byUuid), records($lines)]));
     Hardware::$tool = false;
     Hardware::$serial = null;
 

@@ -12,7 +12,8 @@ namespace OPNsense\TrafficPriority;
  * reload - and, while one has, the rule written into the rules file before every class's that sets
  * every IPv4 connection's DSCP to 0; scripts/trafficpriority/apply.py gives the switch the classes'
  * DSCPs only while the rules file holds that rule, the places taken as here from the classes it holds a
- * rule for (hardware.py's places_of()). The model refuses at the save a minimum this would not hold.
+ * rule for, and those it records as left idle (hardware.py's places_of(), idle_in();
+ * Marking::idleRecord()). The model refuses at the save a minimum this would not hold.
  *
  * Two TCAM entries are free in the switch (os-xgs-npu's switch_qos.py), so two DSCPs at most have a
  * queue of their own: those of the classes switched on that make rules (Marking::problem() none), in

@@ -279,7 +279,16 @@ with tempfile.TemporaryDirectory() as tmp:
     check('status: pf holding no such table - no count', [i['count'] for i in status.status(
         config, rules, PF, project, None, errors, counts=lambda t: None)['classes'][0]['tables']], [None, None, None, None])
     hw = status.status(config, placed, PF, project, None, errors, model=xgs, result=kept, counts=counts)['hardware']
-    check('status: the switch - the class of users with no table now keeps its place, idle, after the one the file holds',
+    check('status: the switch - a class of users with no table now, which the last reload did not record as left idle: '
+          'no place', (hw['classes'][U2]['why'], [d['dscp'] for d in hw['dscps']]), ('rule', [46]))
+    recorded = os.path.join(tmp, 'recorded.debug')
+    with open(placed, encoding='utf-8') as handle:
+        text = handle.read()
+    with open(recorded, 'w', encoding='utf-8') as handle:
+        handle.write(text + '# match in inet from {any} to {any} label "trafficpriority-idle-%s" # Traffic Priority: Gone - '
+                     'makes no rule: no table for its groups and users now: row-gone\n' % U2)
+    hw = status.status(config, recorded, PF, project, None, errors, model=xgs, result=kept, counts=counts)['hardware']
+    check('status: the switch - the class the reload left idle, by its record, keeps its place after the one the file holds',
           (hw['classes'][U2]['why'], hw['classes'][U2]['idle'], [d['dscp'] for d in hw['dscps']]), ('hardware', True, [46, 34]))
 
     with open(config, 'w', encoding='utf-8') as handle:

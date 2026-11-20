@@ -7,9 +7,10 @@ them, and the rules file the last filter reload wrote (the places are taken from
 a rule for, while it holds the one setting every IPv4 connection's DSCP to 0, which the rules hook
 writes while a class has a place; tools/test-rules.php holds the hook to it). A class whose rule the
 file does not hold has no place; Best Effort, the DSCPs below it, IPv6 alone and a class switched off
-neither; a third DSCP is pf's alone; and without that rule in the file, no class has one. A class whose
-groups and users, or applications and categories, have no table now keeps its place all the same, as the
-hook keeps it. Strict classes in the top queues; minimums
+neither; a third DSCP is pf's alone; and without that rule in the file, no class has one. A class the
+reload left idle - its groups and users, or applications and categories, with no table - keeps its place
+all the same, as the hook keeps it, by the line the reload records it with in the same file (idle_in()).
+Strict classes in the top queues; minimums
 weighted - and the two never mixed, nor minimums past 100: the switch is then given nothing, and why is
 said. Firewall: Shaper's parts only where no class has a minimum, every place has one, and they fit.
 And the weight sequence - each queue its share of turns, queue 0 the rest, every queue at least once, no
@@ -77,6 +78,13 @@ check('a rule for one DSCP, as the version before wrote it: not that rule',
       hardware.from_rules('match in inet from {any} to {any} tos 0xb8 scrub ( set-tos 0x00 ) label '
                           '"trafficpriority-clear-46"'), (False, set()))
 check('no rules file', hardware.from_rules(''), (False, set()))
+# the line the hook writes for a class it left idle, as tools/test-rules.php has OPNsense write it
+RECORD = ('# match in inet from {any} to {any} label "trafficpriority-idle-%s" # Traffic Priority: Calls - makes no rule: '
+          'no table for its groups and users now: identity-off')
+check('a class the reload left idle: its record, a line commented out, read - and taken for no rule of the class\'s',
+      (hardware.idle_in(RULES + RECORD % U3), hardware.from_rules(RULES + RECORD % U3)), ({U3}, (True, {U1, U2})))
+check('a record not commented out - the hook never writes one so - is none; no record, none',
+      (hardware.idle_in((RECORD % U3)[2:]), hardware.idle_in(RULES), hardware.idle_in('')), (set(), set(), set()))
 
 # ---- the places, as the rules hook takes them, from the classes the file holds a rule for ----
 cleared, written = hardware.from_rules(RULES)

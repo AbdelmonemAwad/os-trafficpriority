@@ -22,7 +22,9 @@
  * A class that names groups and users of os-useridentity, or applications and categories of
  * os-appcontrol, takes their pf tables as its source or destination, as config.xml holds them at this
  * reload (OPNsense\TrafficPriority\Sources) - and makes no rule while one side has none, which the
- * system log says. Neither plugin's settings or tables are written here.
+ * system log says, and which the rules file records by a line pf never reads (Marking::idleRecord()),
+ * for apply.py to keep the class's switch place as this reload keeps it. Neither plugin's settings or
+ * tables are written here.
  *
  * A hook that throws stops the filter reload: OPNsense calls it with nothing around it
  * (plugins.inc:244-259), and the reload is what loads every rule of the owner's. So nothing here may
@@ -92,7 +94,8 @@ function trafficpriority_firewall(Plugin $fw)
             $rules = Marking::rules($class, (string)$uuid, $key, $tables);
             if (empty($rules)) {
                 $why = Marking::problem($class, (string)$uuid);
-                if ($why === null && Sources::idle($tables)) {
+                $idle = $why === null && Sources::idle($tables);
+                if ($idle) {
                     /* the side with no table, and the first reason the page gives of it */
                     $users = $tables['from'] !== null && empty($tables['from']);
                     $first = '';
@@ -105,6 +108,12 @@ function trafficpriority_firewall(Plugin $fw)
                     $why = sprintf('no table for its %s now: %s', $users ? 'groups and users' : 'applications and categories', $first);
                 }
                 Marking::log(LOG_WARNING, sprintf('Traffic Priority: class "%s" makes no rule (%s)', $name, $why ?? 'unknown'));
+                /* an idle class keeps its place in the switch (Hardware::places()): this reload says so in the
+                   rules file it writes, by a line pf never reads, which apply.py takes its places from */
+                $record = $idle ? Marking::idleRecord($class, (string)$uuid, $why) : null;
+                if ($record !== null) {
+                    $fw->registerFilterRule(Marking::PRIORITY, $record);
+                }
                 continue;
             }
             foreach ($rules as $rule) {

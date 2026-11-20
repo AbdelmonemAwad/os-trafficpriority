@@ -79,7 +79,9 @@ use OPNsense\Firewall\Util;
  *    written at all.
  *  - A class whose groups and users have no table now, or whose applications and categories have none,
  *    makes no rule - never one from every source or to every destination. The rules hook says so in the
- *    system log, and the page says why for each.
+ *    system log, and the page says why for each. It keeps its place in the switch (Hardware::places()),
+ *    and the reload records that it left the class idle in the rules file itself, as a line pf never
+ *    reads (idleRecord()), for apply.py to keep that place too.
  *  - pf fixes a connection's mark when it opens. A connection opened before its device's address joined
  *    a user's table, or before its server joined an application's, keeps the mark it opened with.
  */
@@ -89,6 +91,8 @@ class Marking
     const PRIORITY = 0;
     /* each rule's label: this, then its class's UUID - the page counts a class's rules by it */
     const LABEL = 'trafficpriority-';
+    /* the label of the line recording a class a filter reload left idle: this, then its class's UUID */
+    const IDLE_LABEL = 'trafficpriority-idle-';
     /* each rule's description, before the class's own */
     const DESCR = 'Traffic Priority: ';
     /* the protocols a port may be given for: pfctl refuses a port on any other (parse.y:5309), and
@@ -528,6 +532,36 @@ class Marking
             $rules[] = $rule;
         }
         return $rules;
+    }
+
+    /**
+     * The line a filter reload writes into the rules file for a class it left idle - no rule only because
+     * its groups and users, or its applications and categories, have no table now (problem() null,
+     * Sources::idle()) - as registerFilterRule() takes it: a match rule registered disabled, which OPNsense
+     * writes commented out (FilterRule.php:42, Rule.php:161-164), as it writes a scheduled rule out of its
+     * time, disabled and described "[FIN]" (filter.inc:245-262). pf never reads it. apply.py reads it
+     * (hardware.py's idle_in()), so that the switch keeps the class's place as this reload kept it
+     * (Hardware::places()), the record and the rules coming from one reload in one file. A record written
+     * anywhere else by the hook could come from a run that is no reload: Firewall: Rules lists the
+     * automatic rules by calling every plugin's hook (list_non_mvc_rules.php), and leaves a disabled rule
+     * out of the list. $why is what the system log says of it. null when the class's ID is not a UUID.
+     */
+    public static function idleRecord(array $class, $uuid, $why)
+    {
+        if (self::label($uuid) === null) {
+            return null;
+        }
+        $text = self::description($class['description'] ?? '') ?? '';
+        return [
+            'type' => 'match',
+            'direction' => 'in',
+            'quick' => false,
+            'disabled' => true,
+            'disablereplyto' => true,
+            'ipprotocol' => 'inet',
+            'label' => self::IDLE_LABEL . strtolower((string)$uuid),
+            'descr' => self::DESCR . $text . ' - makes no rule: ' . preg_replace('/[\r\n]+/', ' ', (string)$why),
+        ];
     }
 
     /**

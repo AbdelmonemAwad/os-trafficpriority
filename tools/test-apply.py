@@ -12,8 +12,10 @@ a tool that runs out of time or says nothing said as such; Traffic Priority off,
 switch, a minimum beside a strict class, the XGS 136 family - what this plugin set put back, its settings
 file removed before the tool is asked, and nothing of another plugin's touched or overwritten; a rule set
 pf refused leaving the switch as it is; nothing at all without os-xgs-npu; clear for the plugin's
-removal; and the outcome kept for the page. And a class of users with no table now keeping its place, as
-the rules hook keeps it, while one whose table is there and whose rule the file lacks has none.
+removal; and the outcome kept for the page. And a class the reload left idle - its groups and users with
+no table - keeping its place, as the rules hook keeps it, by the reload's record of it in the rules file;
+one the file holds neither a rule nor a record for has none, whatever config.xml holds since - a class with
+no table and something else wrong with it among them, which the hook gives no place either.
 
     python3 tools/test-apply.py"""
 import json
@@ -79,16 +81,21 @@ def config(on='1', classes=(('46', ''),), follow='0', shaper=''):
 
 
 CLEARING = 'match in inet from {any} to {any} scrub ( set-tos 0x00 ) label "trafficpriority-clear"\n'
+# the line the hook writes for a class it left idle, as tools/test-rules.php has OPNsense write it
+RECORD = ('# match in inet from {any} to {any} label "trafficpriority-idle-%s" # Traffic Priority: Calls - makes no '
+          'rule: no table for its groups and users now: identity-off\n')
 
 
-def rules(classes=(('46', ''),), without=()):
+def rules(classes=(('46', ''),), without=(), idle=()):
     """The rules file as the hook writes it for these classes on an XGS 3300: while one has a place - a
     DSCP above Best Effort - the rule setting every IPv4 connection's DSCP to 0 first, then the classes'
-    own - those of the classes numbered in without left out, as for a class with no table now."""
+    own - those of the classes numbered in without left out, as for a class with no table now - and the
+    record of each class numbered in idle, as the hook writes it for a class it left idle."""
     placed = any(int(c[0]) not in (0, 1, 8) for c in classes)
     return (CLEARING if placed else '') + ''.join('match in on igb1 inet scrub ( set-tos 0x%02x ) label '
                                                   '"trafficpriority-%s"\n' % (int(c[0]) << 2, U % i)
-                                                  for i, c in enumerate(classes) if i not in without)
+                                                  for i, c in enumerate(classes) if i not in without) + \
+        ''.join(RECORD % (U % i) for i in idle)
 
 
 SHAPER = ('<TrafficShaper><pipes><pipe uuid="p1"><enabled>1</enabled><bandwidth>100</bandwidth>'
@@ -182,13 +189,31 @@ with tempfile.TemporaryDirectory() as tmp:
           (run(), calls(), settings()), ({'status': 'ok', 'message': 'cleared'}, [['clear', None, 'running']], None))
 
     # a class of users with no table now (User Identity not installed): no rule of its in the file, its place
-    # kept all the same - the next class does not take it, and its rules come back without another Apply
+    # kept all the same - the next class does not take it, and its rules come back without another Apply -
+    # as the reload's record of it in the rules file says
     idle = (('46', '', '<users>7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a02</users>'), ('34', ''))
-    given(config(classes=idle), ruled=rules(idle, without=(0,)))
+    given(config(classes=idle), ruled=rules(idle, without=(0,), idle=(0,)))
     run()
-    check('a class of users with no table now keeps its place: both DSCPs, in the page\'s order',
+    check('a class the reload left idle, recorded in the rules file, keeps its place: both DSCPs, in the page\'s order',
           (settings()['classes'], result()['plan']['classes'][U % 0]['why'], result()['plan']['classes'][U % 0]['idle']),
           ([{'dscp': 46, 'mask': 63, 'queue': 7}, {'dscp': 34, 'mask': 63, 'queue': 6}], 'hardware', True))
+    given(config(classes=idle), ruled=rules(idle, without=(0,)))
+    run()
+    check('the same class with no table in config.xml now, but no record of it in the rules file - a reload that gave it '
+          'no place: none here either, whatever config.xml holds since',
+          (settings()['classes'], result()['plan']['classes'][U % 0]['why']), ([{'dscp': 34, 'mask': 63, 'queue': 7}], 'rule'))
+    # the review's P1 (PY1): a class with no table and something else wrong with it - a source port no rule could
+    # hold, written by other means - makes no rule and has no place in the hook, and no record: the two classes
+    # after it take 7 and 6, as the hook gave them, and nothing is given for a DSCP no rule marks
+    p1 = (('46', '', '<users>7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a07</users><source_port>5o6O</source_port>'),
+          ('34', '', '<protocol>udp</protocol><destination_port>3074</destination_port>'),
+          ('26', '', '<protocol>udp</protocol><destination_port>8801</destination_port>'))
+    given(config(classes=p1), ruled=rules(p1, without=(0,)))
+    run()
+    check('P1: Calls - no table, and a source port no rule could hold - no place; Games and Video in 7 and 6, as the hook '
+          'placed them', (settings()['classes'], {u: r['why'] for u, r in result()['plan']['classes'].items()}),
+          ([{'dscp': 34, 'mask': 63, 'queue': 7}, {'dscp': 26, 'mask': 63, 'queue': 6}],
+           {U % 0: 'rule', U % 1: 'hardware', U % 2: 'hardware'}))
     tabled = (('46', '', '<users>7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a02</users>'), ('34', ''))
     given(config(classes=tabled), ruled=rules(tabled, without=(0,)))
     with open(paths['TP_CONFIG'], encoding='utf-8') as handle:

@@ -9,8 +9,9 @@ hook reads them (OPNsense\\TrafficPriority\\Sources, the same rules, the same wo
 of os-useridentity - their tables hold the addresses it maps to them, where connections come from - and
 the applications and categories of os-appcontrol - theirs hold the servers nDPI named as them, where
 connections go. Read only: each plugin makes and fills its own tables, as aliases of type External.
-status.py shows each one's state and what its table holds; apply.py and hardware.py keep the switch's
-place of a class that has no table on one side now, as the hook keeps it (idle()).
+status.py shows each one's state and what its table holds, and whether the next filter reload, as
+config.xml is now, leaves a class with no table on one side (idle()). The switch's places are not taken
+from here: the reload that left a class idle records it in its rules file (hardware.py's idle_in()).
 
     a group or a user   User Identity's row by its uuid; its table, the alias the row names, User
                         Identity's own (named uid_, described "User Identity: "), External, switched on,
@@ -212,8 +213,8 @@ def resolve_all(classes, root):
 
 
 def idle(resolved):
-    """Whether a class that names tables has none on one side now: it then makes no rule, and keeps its
-    place in the switch (Sources::idle())."""
+    """Whether a class that names tables has none on one side now: the next filter reload then writes no
+    rule of its, as config.xml is now (Sources::idle())."""
     return (resolved['from'] is not None and not resolved['from']) or (resolved['to'] is not None and not resolved['to'])
 
 
