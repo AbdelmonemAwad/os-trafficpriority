@@ -177,8 +177,8 @@ for the page and the switch):
   ```
 
   OPNsense's own rule class writes each table as its alias's macro (`Rule.php:61-66`, `87-93`), which
-  OPNsense defines in the rules file with its table for every alias of config.xml (`filter.inc:596-648`),
-  so a rule never names a table pfctl is not given;
+  OPNsense defines in the rules file with its table for every alias of config.xml (`filter.inc:619`,
+  `621`), so a rule never names a table pfctl is not given;
 - **only their own tables** - a table is taken only as its plugin's alias, External and switched on,
   while that plugin is on - User Identity's Enabled, Application Control classifying - and, for a group
   or a user, its row switched on. Anything else adds nothing, and the Applied tab says why for each: the
