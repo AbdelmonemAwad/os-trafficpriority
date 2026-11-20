@@ -17,7 +17,9 @@ class TrafficPriority extends BaseModel
      * left out of pf (Marking::problem(), the same test the hook and the page make). The whole class is
      * read when any field of it changed: OPNsense's own field types check only the fields that changed
      * (BaseModel::performValidation()), and config.xml written by other means than the page can hold a
-     * value the page would never take in a field nobody touched.
+     * value the page would never take in a field nobody touched. Whether the tables of its groups and
+     * users, applications and categories are there now is not asked here: the other plugins make them at
+     * their own Apply, before or after this one, and the page says for each what it has now.
      */
     public function performValidation($validateFullModel = false)
     {
@@ -91,9 +93,32 @@ class TrafficPriority extends BaseModel
                     $class->ipprotocol->__reference
                 ));
             }
+            /*
+             * Groups and users, applications and categories (Sources): a value that names none of them is
+             * the field type's own message where the field changed, and this one where config.xml holds it
+             * from other means; their tables take the place of Source and Destination, which pf could not
+             * read with them in one rule.
+             */
+            if (Sources::users($values['users']) === null) {
+                self::refuse($messages, $class->users, gettext('Choose groups and users of User Identity, or none.'));
+            }
+            foreach (['application' => gettext('Choose applications Application Control keeps a table for, or none.'),
+                'categories' => gettext('Choose categories Application Control keeps a table for, or none.')] as $field => $text) {
+                if (Sources::names($values[$field]) === null) {
+                    self::refuse($messages, $class->$field, $text);
+                }
+            }
+            list($users, $apps) = Marking::tabled($values);
+            if ($users && Marking::addresses($values['source_net']) !== ['any']) {
+                self::refuse($messages, $class->users, gettext('Groups and users take the place of Source: leave Source at any, or choose no group or user.'));
+            }
+            if ($apps && Marking::addresses($values['destination_net']) !== ['any']) {
+                $field = Sources::items($values['application']) !== [] ? 'application' : 'categories';
+                self::refuse($messages, $class->$field, gettext('Applications and categories take the place of Destination: leave Destination at any, or choose none of them.'));
+            }
             if (!Marking::narrows($values)) {
                 $messages->appendMessage(new Message(
-                    gettext('Choose at least one of Interfaces, Source, Destination, a port or Arriving with DSCP: a class without any of them would mark every connection.'),
+                    gettext('Choose at least one of Interfaces, Source, Groups and users, Destination, Applications, Application categories, a port or Arriving with DSCP: a class without any of them would mark every connection.'),
                     $class->interface->__reference
                 ));
             }

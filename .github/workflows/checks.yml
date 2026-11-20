@@ -89,6 +89,11 @@ jobs:
       - name: The model and the page's API, with OPNsense 26.7.9's classes
         run: OPNSENSE_CORE=core-26.7.9/src php tools/test-mvc.php
 
+      # The model's fields of the other plugins' lists: the groups and users of os-useridentity, and the
+      # applications and categories os-appcontrol keeps a table for, read from the configuration.
+      - name: "Groups and users, applications and categories offered from the other plugins' own lists"
+        run: php tools/test-fields.php
+
       # status.py's reading of the rules pf was given and of pf's own counters, by each class's label.
       - name: The page says what pf holds of each class
         run: python3 tools/test-status.py

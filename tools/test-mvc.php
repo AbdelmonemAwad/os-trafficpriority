@@ -12,7 +12,10 @@
  * save on a class with no place in the switch's queues and when the minimums of the classes switched on
  * would add up to more than 100 (Hardware, the same cases as tools/test-hardware.py gives hardware.py);
  * the switch's queue of each class and each rule of Firewall: Shaper on the page; and Apply's second
- * half, the switch set after the filter reload.
+ * half, the switch set after the filter reload. And groups and users, applications and categories
+ * (2026-11-20): taking the place of Source and Destination, a value from other means that names none of
+ * them refused on its field, never refused for what their tables hold now; and on the page, each one's
+ * table as status.py reads it.
  *
  * OPNsense's own field types are not run here. They check only the fields that changed
  * (BaseModel::performValidation()), and what they refuse is theirs - PortField a port with a line
@@ -289,7 +292,8 @@ namespace {
         return ['changed' => $changed, 'values' => array_merge(['enabled' => '1', 'sequence' => '100',
             'description' => 'Voice', 'interface' => 'lan', 'ipprotocol' => 'inet', 'protocol' => 'udp',
             'source_net' => 'any', 'source_port' => '', 'destination_net' => 'any', 'destination_port' => '5060',
-            'match_dscp' => '', 'dscp' => '46', 'minimum' => ''], $fields)];
+            'match_dscp' => '', 'dscp' => '46', 'minimum' => '', 'users' => '', 'application' => '',
+            'categories' => ''], $fields)];
     }
 
     /* the messages of a save: [field => [message, ...]], the field as its name in the class */
@@ -398,6 +402,41 @@ namespace {
     check(saved([U1 => cls(['minimum' => '60', 'enabled' => '0'])]) === [], 'a class switched off: its own minimum not refused');
     check(saved([U1 => cls(['minimum' => '30'])], [['classes.class.' . at('minimum'), 'A percent from 1 to 100.']]) ===
         [at('minimum') => ['A percent from 1 to 100.']], 'the field type\'s own message on Minimum: kept, and no second one');
+
+    /* groups and users, applications and categories (2026-11-20): their tables take the place of Source and
+       Destination; a value config.xml holds from other means that names none of them refused on its field;
+       whether their tables are there now not asked at the save */
+    $alice = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a02';
+    $nothing = ['interface' => '', 'protocol' => 'any', 'destination_port' => ''];
+    foreach ([['users' => $alice], ['application' => 'Zoom'], ['categories' => 'VoIP'],
+        ['users' => $alice, 'application' => 'Zoom,Teams', 'categories' => 'VoIP']] as $fields) {
+        check(saved([U1 => cls($fields + $nothing)]) === [], json_encode($fields) . ' alone: saved, the tables narrowing it - whatever they hold now');
+    }
+    $both = saved([U1 => cls(['users' => $alice, 'source_net' => '192.0.2.10'])]);
+    check(array_keys($both) === [at('users')] && strpos($both[at('users')][0], 'take the place of Source') !== false,
+        'groups and users beside a source: refused, on Groups and users');
+    $dest = saved([U1 => cls(['application' => 'Zoom', 'destination_net' => '198.51.100.0/24'])]);
+    check(array_keys($dest) === [at('application')] && strpos($dest[at('application')][0], 'take the place of Destination') !== false,
+        'an application beside a destination: refused, on Applications');
+    $cdest = saved([U1 => cls(['categories' => 'VoIP', 'destination_net' => '198.51.100.7'])]);
+    check(array_keys($cdest) === [at('categories')], 'a category beside a destination, no application: refused, on Application categories');
+    check(saved([U1 => cls(['users' => $alice, 'destination_net' => '198.51.100.7'])]) === [] &&
+        saved([U1 => cls(['application' => 'Zoom', 'source_net' => '192.0.2.0/24'])]) === [],
+        'users with a destination, an application with a source: saved - each table on its own side');
+    $bad = saved([U1 => cls(['users' => 'not-a-uuid', 'description' => 'Renamed'])]);
+    check(array_keys($bad) === [at('users')] && strpos($bad[at('users')][0], 'Choose groups and users') !== false,
+        'a users value from other means that is no row ID: refused, on Groups and users');
+    check(array_keys(saved([U1 => cls(['application' => "Zoom\nX"])])) === [at('application')] &&
+        array_keys(saved([U1 => cls(['categories' => "Vo\nIP"])])) === [at('categories')],
+        'an application or a category holding a line break: refused, on its field');
+    check(saved([U1 => cls(['users' => 'not-a-uuid'])], [['classes.class.' . at('users'), 'Option [not-a-uuid] not in list.']]) ===
+        [at('users') => ['Option [not-a-uuid] not in list.']], 'the field type\'s own message on Groups and users: kept, and no second one');
+    check(saved([U1 => cls(['users' => $alice, 'minimum' => '40'])]) === [],
+        'a minimum on a class of users with a place: saved, as any class\'s');
+    $narrow = saved([U1 => cls($nothing)]);
+    check(strpos($narrow[at('interface')][0] ?? '', 'Groups and users') !== false &&
+        strpos($narrow[at('interface')][0] ?? '', 'Application categories') !== false,
+        'a class that narrows nothing: the message names groups and users, applications and categories too');
 
     /* only a class that changed is read, unless the whole model is */
     check(saved([U1 => cls($everything, false)]) === [], 'a class that did not change: not read');
