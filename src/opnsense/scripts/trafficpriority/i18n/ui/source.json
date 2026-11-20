@@ -42,6 +42,7 @@
  "Any",
  "Any cannot be combined with other addresses.",
  "Application Control (os-appcontrol) is not installed: Applications and Application categories offer nothing, and a class that names some makes no rule.",
+ "Application Control (os-appcontrol) keeps no table now - it is not classifying, or not applied there yet: Applications and Application categories offer nothing until it does, and a class that names some makes no rule.",
  "Application Control is not classifying",
  "Application Control is not installed",
  "Application categories",

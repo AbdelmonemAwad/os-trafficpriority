@@ -131,9 +131,19 @@ out.missingIdentity = {identity: byId('tp-no-identity').shown, appcontrol: byId(
 s.others = {identity: true, appcontrol: false};
 draw(s);
 out.missingApps = {identity: byId('tp-no-identity').shown, appcontrol: byId('tp-no-appcontrol').shown};
+s.others = {identity: true, appcontrol: true, appcontrol_tables: 0};
+draw(s);
+out.appsNone = {appcontrol: byId('tp-no-appcontrol').shown, tables: byId('tp-no-appcontrol-tables').shown};
+s.others = {identity: true, appcontrol: true, appcontrol_tables: 41};
+draw(s);
+out.appsSome = byId('tp-no-appcontrol-tables').shown;
+s.others = {identity: true, appcontrol: false, appcontrol_tables: 0};
+draw(s);
+out.appsGone = {appcontrol: byId('tp-no-appcontrol').shown, tables: byId('tp-no-appcontrol-tables').shown};
 s = copy(base);
 draw(s);
-out.noOthers = {identity: byId('tp-no-identity').shown, appcontrol: byId('tp-no-appcontrol').shown};
+out.noOthers = {identity: byId('tp-no-identity').shown, appcontrol: byId('tp-no-appcontrol').shown,
+                tables: byId('tp-no-appcontrol-tables').shown};
 console.log(JSON.stringify(out));
 '''
 
@@ -203,8 +213,10 @@ def texts():
           'texts: a class with no table makes no rule, and on an XGS 3300 keeps its queue')
     template = open(VOLT, encoding='utf-8').read()
     check('id="tp-no-identity"' in template and 'User Identity (os-useridentity) is not installed' in volt and
-          'id="tp-no-appcontrol"' in template and 'Application Control (os-appcontrol) is not installed' in volt,
-          'texts (Classes): the lines the page shows when either plugin is not installed')
+          'id="tp-no-appcontrol"' in template and 'Application Control (os-appcontrol) is not installed' in volt and
+          'id="tp-no-appcontrol-tables"' in template and 'keeps no table now - it is not classifying, or not applied' in volt,
+          'texts (Classes): the lines the page shows when either plugin is not installed, or Application Control keeps no '
+          'table')
 
 
 def main():
@@ -265,8 +277,12 @@ def main():
     check(out['missingIdentity'] == {'identity': True, 'appcontrol': False},
           'Classes: User Identity not installed - its line shown, Application Control\'s hidden: %r' % (out['missingIdentity'],))
     check(out['missingApps'] == {'identity': False, 'appcontrol': True}, 'Classes: Application Control not installed - said')
-    check(out['noOthers'] == {'identity': False, 'appcontrol': False},
-          'Classes: a status without them (an older status script) - neither line shown')
+    check(out['appsNone'] == {'appcontrol': False, 'tables': True} and out['appsSome'] is False and
+          out['appsGone'] == {'appcontrol': True, 'tables': False},
+          'Classes: Application Control installed and keeping no table - not classifying, or not applied yet - said; with '
+          'its tables, not; not installed, that line alone: %r %r %r' % (out['appsNone'], out['appsSome'], out['appsGone']))
+    check(out['noOthers'] == {'identity': False, 'appcontrol': False, 'tables': False},
+          'Classes: a status without them (an older status script) - no line shown')
     texts()
     print('%d of %d checks failed' % (len(FAILED), CHECKS[0]) if FAILED else '%d checks passed' % CHECKS[0])
     return 1 if FAILED else 0

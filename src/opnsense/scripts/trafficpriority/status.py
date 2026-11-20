@@ -258,6 +258,7 @@ def status(config=None, rules=None, pf_text=None, project=None, states=None, err
     given - which both the lines of the Classes tab and each item's reason follow."""
     installed = sources.installed() if installed is None else installed
     read = settings(config, installed)
+    tables_now = keeps(config)
     if read is None:
         return {'error': 'config.xml could not be read'}
     on, classes = read
@@ -289,8 +290,21 @@ def status(config=None, rules=None, pf_text=None, project=None, states=None, err
         'marked': marked(states, marks),
         'project': os.path.exists(project or PROJECT),
         'hardware': switch(config, model, result, rules, check),
-        'others': installed,
+        # whether each plugin is installed, and how many tables Application Control keeps now: none while it
+        # does not classify or has not been applied yet, when the dialog has nothing of it to offer
+        'others': dict(installed, appcontrol_tables=tables_now),
     }
+
+
+def keeps(path=None):
+    """How many tables Application Control keeps now - its aliases of applications and categories in
+    Firewall: Aliases, switched on or off (sources.app_tables()); 0 when config.xml cannot be read."""
+    try:
+        root = ET.parse(path or CONFIG).getroot()
+    except (OSError, ET.ParseError):
+        return 0
+    found = sources.aliases(root)
+    return len(sources.app_tables(found, 'application')) + len(sources.app_tables(found, 'category'))
 
 
 def main(argv):

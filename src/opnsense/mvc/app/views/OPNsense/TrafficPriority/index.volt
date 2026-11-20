@@ -357,6 +357,7 @@
             const others = data.others || {};
             $('#tp-no-identity').toggle(others.identity === false);
             $('#tp-no-appcontrol').toggle(others.appcontrol === false);
+            $('#tp-no-appcontrol-tables').toggle(others.appcontrol === true && others.appcontrol_tables === 0);
         }
 
         function refresh() {
@@ -532,6 +533,9 @@
         </div>
         <div id="tp-no-appcontrol" class="text-muted" style="display: none; padding: 0 15px 10px;">
             {{ lang._('Application Control (os-appcontrol) is not installed: Applications and Application categories offer nothing, and a class that names some makes no rule.') }}
+        </div>
+        <div id="tp-no-appcontrol-tables" class="text-muted" style="display: none; padding: 0 15px 10px;">
+            {{ lang._('Application Control (os-appcontrol) keeps no table now - it is not classifying, or not applied there yet: Applications and Application categories offer nothing until it does, and a class that names some makes no rule.') }}
         </div>
     </div>
     <div id="applied" class="tab-pane">
