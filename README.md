@@ -36,7 +36,8 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
 >
 > **The third part, written, not released (2026-11-20):** a class's groups and users, of os-useridentity,
 > and applications and categories, of os-appcontrol, as those plugins' pf tables - read here, never
-> written. It has not run on an appliance yet: its checks ran away from one ([What is tested](#what-is-tested)).
+> written. ~~It has not run on an appliance yet: its checks ran away from one.~~ It ran on the second XGS
+> 3300, the XGS 136 and a plain OPNsense the same day: what was run is under [What is tested](#what-is-tested).
 
 <p align="center"><b>Contents:</b> <a href="#what-it-does">What it does</a> &middot; <a href="#how-a-class-marks-its-connections">How a class marks its connections</a> &middot; <a href="#groups-and-users-applications-and-categories">Groups and users, applications and categories</a> &middot; <a href="#the-switchs-queues">The switch's queues</a> &middot; <a href="#following-firewall-shaper">Following Firewall: Shaper</a> &middot; <a href="#on-a-sophos-xgs">On a Sophos XGS</a> &middot; <a href="#not-yet-and-why">Not yet, and why</a> &middot; <a href="#what-is-tested">What is tested</a> &middot; <a href="#installation">Installation</a> &middot; <a href="#updates">Updates</a> &middot; <a href="#where-it-fits">Where it fits</a> &middot; <a href="#licence">Licence</a></p>
 
@@ -423,12 +424,13 @@ stays counted while it is open.
   first on one interface was not checked. The Set DSCP help says so.
 - **IPv6 in hardware** - see above: a marked IPv6 connection stays with the host.
 - **the XGS 136's switch** - only read by os-xgs-npu, for the reasons above; the page says so.
-- **groups and users, applications and categories on an appliance** - written on 2026-11-20 and run in
-  the checks alone, not yet on an appliance: neither the classes' rules on the tables os-useridentity
+- **groups and users, applications and categories on an appliance** - ~~written on 2026-11-20 and run in
+  the checks alone, not yet on an appliance~~ run on 2026-11-20 on the second XGS 3300, the XGS 136 and a
+  plain OPNsense ([What is tested](#what-is-tested)); left: a real video call. ~~neither the classes' rules on the tables os-useridentity
   and os-appcontrol fill there, nor the two tests their part of the plan sets - a video call and a large
   download on one port, the call in the high queue; two users on two devices, a high class for one, its
   share under load higher and its minimum kept. The call is to be run both ways: to a server already in
-  the application's table, and as a first call to a server new to it, which stays unmarked.
+  the application's table, and as a first call to a server new to it, which stays unmarked.~~
 - **the first call to a server new to an application's table** - not marked, for its whole life, and no
   more is the first after an Expire (above). pf fixes a connection's mark when it opens and has no way to
   change it after; only cutting the connection would, and nothing here cuts one. What would mark it is
@@ -459,7 +461,7 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   photographed: [dscp-2026-11-17.png](docs/images/measurements/dscp-2026-11-17.png). The same test
   had found Marked now at 0 during a marked run - pfctl prints every marked state `set-tos 0x00` -
   and the count now reads only that a mark is set;
-- **the rules** - `tools/test-rules.php`, 182 checks, run with OPNsense's own Plugin, FilterRule, Rule
+- **the rules** - `tools/test-rules.php`, ~~182~~ 183 checks, run with OPNsense's own Plugin, FilterRule, Rule
   and Util of every release from 26.7 to 26.7.9, from opnsense/core's tags, and of opnsense/core's
   main branch of that day, under PHP 8.5. For sample classes it checks the line OPNsense
   writes - match, in, never quick, no state, no reply-to, the DSCP's ECN bits clear, the label -
@@ -556,10 +558,46 @@ its own `rm` of the menu file, `uninstall.sh`'s `rm -rf` of the model's director
 with it. On 2026-11-20 the third part's review fixes were checked the same way: their tests, run on the
 code before the fixes, failed on each - and pass on it now.
 
-Not tested: the XGS 136; IPv6 on an appliance; `install.sh` and `uninstall.sh` on an appliance; the
+On the appliances and a plain OPNsense, the same day, after one review and one round of its fixes, from
+this branch, as a user meets it - the second XGS 3300 with os-xgs-npu's main of the day (743c45a9, its switch
+tool), os-useridentity's and os-appcontrol's mains, the bench VM sending through it to the XGS 136 behind
+Port8; the XGS 136 itself; and a plain OPNsense in qemu without os-xgs-npu - each put back as found after it:
+
+- **a call to a server already in Zoom's table** (Port8 at 100 Mbit/s by a Firewall: Shaper pipe, a class
+  for Zoom marked EF): the call at 40.0 Mbit/s with nothing lost beside 120 Mbit/s of download, queue 7 and
+  the TCAM entry counting its datagrams; without the class it lost 37 % (24.6 Mbit/s), as phase 2 measured;
+- **a first call to a server new to the table**: it stayed in queue 0 for its whole life while the server
+  joined the table 55 s in, and a second stream to it was marked;
+- **a minimum** of 30 for the call: Port8 weighted, port 0's pause turned off by the switch tool at the
+  plugin's Apply, the call 27 % of the sum or more in each run, the sum 880 Mbit/s or more;
+- **a category**, Video: its table held the server and the call was marked as above;
+- **a user**, u2, mapped from the test domain: a class for u2 with a minimum of 60 took 59.2 to 59.6 % of
+  915.7 to 921.2 Mbit/s against another device in each of three uploads, queue 7 counting u2's frames, and
+  u2's downloads arrived marked; in single seconds its share fell to 43 to 52 % - recorded as measured,
+  TCP's own swings under the switch's weights. Without the class neither held 60:40;
+- **a group**, G-Staff: a device of the group marked and counted in queue 7, one outside it not;
+- **User Identity switched off**: pf kept the class's rule until the next filter reload, which wrote none and
+  said why in the system log and as a record in the rules file, the class's place in the switch kept;
+  switched on again, the rule came back with no Apply of Traffic Priority's, and a new stream was marked;
+- **the XGS 136**: the switch only read (the page says why), the class's rule from a user's table marking the
+  replies of the user's downloads on their way in, the removal leaving none of its rules and its settings
+  kept;
+- **a plain OPNsense**: an update over the main kept the main's class as it was; with no User Identity, a
+  user's class makes no rule and the page and the log say why; with it, the rule marked the user's frames
+  and no other device's; the removal ended 0.
+
+Found by that lab and fixed in this branch (aab95bc): OPNsense's legacy parser reads every element named as
+one of its list tags - alias among them, for Firewall: Aliases - as a list, so the rules hook read each
+group's and user's table as none and every class naming them made no rule, while the page, which reads
+config.xml itself, showed the tables. A list of one is now taken as its text, and `tools/test-rules.php`
+holds the case. Recorded as found: User Identity switched off and on again within one minute leaves
+os-xgs-npu's cut list nothing to add (its runs are a minute apart), so a connection opened in those
+seconds keeps its first marking until it ends.
+
+Not tested: ~~the XGS 136;~~ IPv6 on an appliance; ~~`install.sh` and `uninstall.sh` on an appliance;~~ the
 page in a browser; of the second part, what the second XGS 3300 did not measure on 2026-11-19
 ([The switch's queues](#the-switchs-queues))~~ - os-xgs-npu turning port 0's pause off itself among it~~;
-and the third part on any appliance.
+~~and the third part on any appliance~~ and a real video call.
 
 ## Installation
 
