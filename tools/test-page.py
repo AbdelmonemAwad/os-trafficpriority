@@ -113,6 +113,11 @@ out.inpfApps = f.inpf({id: 'rules'}, {enabled: true, problem: '', idle: 'apps', 
 out.inpfProblem = f.inpf({id: 'rules'}, {enabled: true, problem: 'sources', idle: 'users', rules: 0});
 out.inpfProblems = ['users', 'application', 'destinations'].map(p => f.inpf({id: 'rules'}, {enabled: true, problem: p, rules: 0}));
 out.inpfHeld = f.inpf({id: 'rules'}, {enabled: true, problem: '', idle: '', rules: 2});
+/* the review's PG1: pf holds the class's rules from the last reload, and config.xml as saved since makes none */
+out.inpfHeldIdle = f.inpf({id: 'rules'}, {enabled: true, problem: '', idle: 'users', rules: 3, written: 3, states: 12});
+out.inpfHeldProblem = f.inpf({id: 'rules'}, {enabled: true, problem: 'sources', idle: 'users', rules: 2, written: 2});
+out.inpfHeldApps = f.inpf({id: 'rules'}, {enabled: true, problem: '', idle: 'apps', rules: 4, written: 4, not_placed: 1});
+out.inpfWrittenIdle = f.inpf({id: 'rules'}, {enabled: true, problem: '', idle: 'users', rules: 0, written: 2});
 out.queueIdle = f.queue({id: 'queue'}, {switch_not: '', switch: {why: 'hardware', kind: 'strict', queue: 7, idle: true}});
 out.queueHeld = f.queue({id: 'queue'}, {switch_not: '', switch: {why: 'hardware', kind: 'strict', queue: 7, idle: false}});
 const draw = R.gets['/api/trafficpriority/service/status'];
@@ -220,6 +225,18 @@ def main():
                                                       'no rule: applications or categories beside a destination'],
           'In pf: the new refusals worded: %r' % (out['inpfProblems'],))
     check(plain(out['inpfHeld']) == '2 rules', 'In pf: a class held, its rules counted')
+    check(plain(out['inpfHeldIdle']) == '3 rules · the next filter reload writes none: none of its groups and users has a '
+          'table now', 'In pf: what pf holds first, then that the next filter reload writes none, and why: %r' %
+          (out['inpfHeldIdle'],))
+    check(plain(out['inpfHeldProblem']) == '2 rules · the next filter reload writes none: groups and users beside a source'
+          and plain(out['inpfHeldApps']) == '4 rules · 1 not placed · the next filter reload writes none: none of its '
+          'applications and categories has a table now',
+          'In pf: the same for a problem, and for applications with a rule not placed: %r %r' %
+          (out['inpfHeldProblem'], out['inpfHeldApps']))
+    check('text-warning' not in out['inpfHeldIdle'].split(' · ')[0] and 'text-warning' in out['inpfHeldIdle'].split(' · ')[1],
+          'In pf: the rules pf holds plain, the next reload\'s none a warning')
+    check(plain(out['inpfWrittenIdle']) == 'no rule: none of its groups and users has a table now',
+          'In pf: no rule in pf, none written next either - the reason alone: %r' % (out['inpfWrittenIdle'],))
     check(plain(out['queueIdle']) == 'queue 7, strict · kept while it has no table: it marks nothing meanwhile' and
           plain(out['queueHeld']) == 'queue 7, strict',
           'Switch queue: a class with no table keeps its queue, said; one with them, as before: %r' % (out['queueIdle'],))

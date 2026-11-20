@@ -386,19 +386,24 @@
                         if (!row.enabled) {
                             return '<span class="text-muted">' + "{{ lang._('off') }}" + '</span>';
                         }
+                        /* why the next filter reload writes no rule of the class, as its settings and the other
+                           plugins' tables are now - not what pf holds, which the last reload gave it */
+                        let none = '';
                         if (row.problem) {
-                            return '<span class="text-warning">' + "{{ lang._('no rule') }}" + ': ' +
-                                (problems[row.problem] || row.problem) + '</span>';
-                        }
-                        if (row.idle) {
-                            return '<span class="text-warning">' + "{{ lang._('no rule') }}" + ': ' + (row.idle === 'users' ?
-                                "{{ lang._('none of its groups and users has a table now') }}" :
-                                "{{ lang._('none of its applications and categories has a table now') }}") + '</span>';
+                            none = problems[row.problem] || row.problem;
+                        } else if (row.idle) {
+                            none = row.idle === 'users' ? "{{ lang._('none of its groups and users has a table now') }}" :
+                                "{{ lang._('none of its applications and categories has a table now') }}";
                         }
                         const placed = row.not_placed ? ' · <span class="text-warning">' + count(row.not_placed) + ' ' +
                             "{{ lang._('not placed') }}" + '</span>' : '';
+                        /* what pf holds comes first: a class's rules stay in pf until the next filter reload */
                         if (row.rules) {
-                            return count(row.rules) + ' ' + "{{ lang._('rules') }}" + placed;
+                            return count(row.rules) + ' ' + "{{ lang._('rules') }}" + placed + (none ? ' · <span class="text-warning">' +
+                                "{{ lang._('the next filter reload writes none:') }}" + ' ' + none + '</span>' : '');
+                        }
+                        if (none) {
+                            return '<span class="text-warning">' + "{{ lang._('no rule') }}" + ': ' + none + '</span>';
                         }
                         if (row.written) {
                             return '<span class="text-warning">' + "{{ lang._('written, not loaded') }}" + '</span>' + placed;

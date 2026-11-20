@@ -229,6 +229,7 @@
  "set by Apply",
  "switched off in Firewall: Shaper",
  "switched off in User Identity",
+ "the next filter reload writes none:",
  "the only queue of its pipe: its weight shares nothing",
  "the switch no longer holds what Apply set: Apply again",
  "the way in: the switch limits what leaves a port",

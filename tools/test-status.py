@@ -267,6 +267,15 @@ with tempfile.TemporaryDirectory() as tmp:
           (['appcontrol_Zoom', 'appcontrol_cat_VoIP', 'uid_alice'], [('uid_alice', None), ('appcontrol_Teams', None)]))
     check('status: a class with no table for its users now - idle, the users\' side; one with them, not',
           (rows[U2]['idle'], rows[U2]['tables'][0]['why'], rows[U1]['idle']), ('users', 'row-gone', ''))
+    with open(config, encoding='utf-8') as handle:
+        text = handle.read()
+    off = os.path.join(tmp, 'off.xml')
+    with open(off, 'w', encoding='utf-8') as handle:
+        handle.write(text.replace('<TrafficPriority><general><enabled>1</enabled>', '<TrafficPriority><general><enabled>0</enabled>', 1))
+    rows_off = {c['uuid']: c for c in status.status(off, rules, PF, project, None, errors, counts=counts,
+                                                    installed={'identity': True, 'appcontrol': True})['classes']}
+    check('status: Traffic Priority off - no class idle, as the next filter reload writes no class\'s rule at all (PY2)',
+          (rows_off[U2]['idle'], rows_off[U2]['tables'][0]['why']), ('', 'row-gone'))
     check('status: whether os-useridentity and os-appcontrol are installed, as given', got['others'],
           {'identity': True, 'appcontrol': False})
     check('status: their models looked for where they install them', (status.sources.IDENTITY_MODEL,

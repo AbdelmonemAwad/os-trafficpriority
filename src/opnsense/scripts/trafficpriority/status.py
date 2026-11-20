@@ -64,8 +64,8 @@ PROJECT = '/usr/local/opnsense/mvc/app/models/OPNsense/XGS/XGS.xml'
 def settings(path=None):
     """(on, [each class's uuid, whether it is switched on, its description, its DSCP, and its groups and
     users, applications and categories - each with its table or why it has none (sources.resolve()'s
-    items) - and idle, the side with no table now: '', 'users' or 'apps']); None when config.xml cannot
-    be read."""
+    items) - and idle, the side with no table now: '', 'users' or 'apps', '' while Traffic Priority is
+    off - what the next filter reload finds, not what pf holds]); None when config.xml cannot be read."""
     try:
         root = ET.parse(path or CONFIG).getroot()
     except (OSError, ET.ParseError):
@@ -85,7 +85,9 @@ def settings(path=None):
             'description': node.findtext('description') or '',
             'dscp': (node.findtext('dscp') or '').strip(),
             'tables': resolved['items'],
-            'idle': sources.idle_side(resolved),
+            # the side the next filter reload finds no table for, as config.xml is now; none while Traffic
+            # Priority is off, when that reload writes no class's rule at all
+            'idle': sources.idle_side(resolved) if on else '',
         })
     return on, classes
 
