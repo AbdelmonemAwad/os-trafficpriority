@@ -35,7 +35,7 @@
  "AF41 (34)",
  "AF42 (36)",
  "AF43 (38)",
- "Allow access to traffic priority: its classes, the DSCP each marks, and firewall rules it registers",
+ "Allow access to traffic priority: its classes, the DSCP each marks, and firewall rules it registers - a class may name the groups and users of User Identity, and the page shows how many addresses each one's table holds now, so whether its users are logged on",
  "An independent project, not affiliated with Deciso B.V.",
  "Any",
  "Any cannot be combined with other addresses.",
