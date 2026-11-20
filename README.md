@@ -159,9 +159,17 @@ for the page and the switch):
 
 - **groups and users** - User Identity's group rows and user rows, chosen in the dialog from its own
   lists and kept by each row's ID, as os-blocklists keeps them. A row's table holds the addresses User
-  Identity maps to that group's users, or to that user, now - their devices - and is the class's source.
-  They take the place of Source, which stays any: pf reads every address of a rule's source as either,
-  so a Source beside them would widen the class, not narrow it, and the page refuses one at the save;
+  Identity has mapped to that group's users, or to that user, now, and is the class's source. Each
+  address comes from an event that named it: a domain controller's logon (event 4768) names the address
+  the user logged on from, usually IPv4 (`::ffff:a.b.c.d` in the event); a RADIUS accounting record or a
+  captive portal session names its own. A device's connections from its other addresses are not the
+  class's: a device on both IP versions prefers IPv6 where both work, and sends from temporary IPv6
+  addresses that no event names, so on such a network the class marks the user's IPv4 connections only,
+  whatever its IP version - the switch's queues are IPv4's anyway. Only the connections a user's device
+  opens are the class's, never those opened to it from elsewhere, which would otherwise take the class's
+  mark just by connecting in. They take the place of Source, which stays any: pf reads every address of a
+  rule's source as either, so a Source beside them would widen the class, not narrow it, and the page
+  refuses one at the save;
 - **applications and categories** - those Application Control keeps a table for, by the names nDPI
   gives them: each application chosen there in Application tables, Blocked applications or Rules and
   applied, and every category of the installed nDPI while it classifies. A table holds the servers nDPI
