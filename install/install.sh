@@ -47,6 +47,12 @@ service configd restart > /dev/null
 # PHP keeps them in its own temporary directory on 26.7 (/var/lib/php/tmp); /tmp is where they were
 rm -f /var/lib/php/tmp/opnsense_menu_cache.xml /var/lib/php/tmp/opnsense_acl_cache.json \
     /tmp/opnsense_menu_cache.xml /tmp/opnsense_acl_cache.json
+# The model's version steps (Migrations/), as pkg/post-install.sh runs them - since 2026-11-20, 1.2.0: groups
+# and users, applications and categories, none of which changes a class saved before. config.xml is saved
+# only where a step ran; before the filter reload, which reads it.
+if [ -x /usr/local/opnsense/mvc/script/run_migrations.php ]; then
+    /usr/local/opnsense/mvc/script/run_migrations.php OPNsense/TrafficPriority > /dev/null || true
+fi
 configctl filter reload skip_alias > /dev/null 2>&1 || true
 
 # What this install is, for the self-update: the commit, from a git checkout, or from the

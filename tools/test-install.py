@@ -13,7 +13,9 @@ are laid down and with which modes, where the menu goes, that nothing is copied 
 syntax error, that the rules hook is gone before the filter reload that takes the classes' rules out
 of pf, that nothing of the plugin is left, and what each says when pf still holds a rule of it. And the
 switch's queues the plugin set, put back before its files go - by apply.py in uninstall.sh, by
-os-xgs-npu's switch tool in post-deinstall.sh, and there only when the settings file is the plugin's.
+os-xgs-npu's switch tool in post-deinstall.sh, and there only when the settings file is the plugin's. And
+the model's version steps (1.2.0 since 2026-11-20) run by install.sh once the files are there, before the
+filter reload, as post-install.sh runs them - and an install without OPNsense's runner going on.
 
     python3 tools/test-install.py"""
 import os
@@ -187,10 +189,23 @@ with tempfile.TemporaryDirectory() as tmp:
     with open(broken, 'w', encoding='utf-8') as handle:
         handle.write(kept)
 
-    # install.sh: every file of src/ laid down, the menu placed, the caches cleared, the filter reloaded
+    # install.sh without OPNsense's migration runner (a tree that has none): installed all the same
+    rc, out = box.run('install/install.sh')
+    check('install.sh, no migration runner: installed, no step asked', (rc, [c for c in box.called() if 'migrations' in c]),
+          (0, []))
+    shutil.rmtree(box.fake + LOCAL)
+    box.python()
+    box.forget()
+
+    # install.sh: every file of src/ laid down, the menu placed, the caches cleared, the model's version steps
+    # run once the files are there, then the filter reloaded
     for cache in CACHES:
         box.write(box.fake + cache, 'cached')
     box.write(os.path.join(box.repo, '.source-commit'), COMMIT + ' 2026-11-17T12:00:00+00:00\n')
+    migration = '/usr/local/opnsense/mvc/app/models/OPNsense/TrafficPriority/Migrations/M1_2_0.php'
+    box.write(box.fake + '/usr/local/opnsense/mvc/script/run_migrations.php',
+              '#!/bin/sh\necho "run_migrations $* step=$([ -f %s ] && echo there || echo missing)" >> %s\n'
+              % (box.fake + migration, box.calls), 0o755)
     rc, out = box.run('install/install.sh')
     check('install.sh: done, and where the page is said', (rc, out.strip().splitlines()[-1:]),
           (0, ['Traffic Priority installed: Firewall > Traffic Priority']))
@@ -198,8 +213,10 @@ with tempfile.TemporaryDirectory() as tmp:
     check('install.sh: every file of src/ laid down, and nothing else', laid, source_files())
     check('install.sh: the menu file placed', box.read(MENU), menu_own)
     check('install.sh: the caches cleared', [c for c in CACHES if os.path.exists(box.fake + c)], [])
-    check('install.sh: configd restarted, then the filter reloaded with the hook in place',
-          box.called(), ['service configd restart', 'configctl filter reload skip_alias hook=yes'])
+    check('install.sh: configd restarted, the model\'s version steps run with 1.2.0\'s in place, then the filter '
+          'reloaded with the hook in place',
+          box.called(), ['service configd restart', 'run_migrations OPNsense/TrafficPriority step=there',
+                         'configctl filter reload skip_alias hook=yes'])
     check('install.sh: the modes', [box.mode(p) for p in (
         '/usr/local/opnsense/scripts/trafficpriority/status.py',
         '/usr/local/opnsense/scripts/trafficpriority/self-update.py',
@@ -269,12 +286,15 @@ with tempfile.TemporaryDirectory() as tmp:
         os.chmod(box.fake + path, 0o755 if path.endswith(('.py', '.sh')) else 0o644)
     box.write(box.fake + '/usr/local/sbin/configctl', '#!/bin/sh\nexec configctl "$@"\n', 0o755)
     box.write(box.fake + '/usr/local/etc/rc.d/configd', '#!/bin/sh\nservice configd "$@"\n', 0o755)
+    box.write(box.fake + '/usr/local/opnsense/mvc/script/run_migrations.php',
+              '#!/bin/sh\necho "run_migrations $*" >> %s\n' % box.calls, 0o755)
     box.forget()
     rc, out = box.run('pkg/post-install.sh')
     check('post-install.sh: the menu placed, said', (rc, box.read(MENU) == menu_own,
           'the page is at Firewall > Traffic Priority' in out), (0, True, True))
-    check('post-install.sh: configd restarted and the filter reloaded',
-          box.called(), ['service configd restart', 'configctl filter reload skip_alias hook=yes'])
+    check('post-install.sh: configd restarted, the model\'s version steps run, and the filter reloaded',
+          box.called(), ['service configd restart', 'run_migrations OPNsense/TrafficPriority',
+                         'configctl filter reload skip_alias hook=yes'])
     os.chmod(box.fake + '/usr/local/opnsense/scripts/trafficpriority/place-menu.sh', 0o644)
     rc, out = box.run('pkg/post-install.sh')
     check('post-install.sh, place-menu.sh not runnable: said', 'its menu file was not written' in out, True)
