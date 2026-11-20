@@ -261,6 +261,10 @@ namespace {
         'groups and users by uuid, labelled with name, kind and alias, sorted; one switched off marked; a row without a uuid ' .
         'left out; a name with < > and a line break shown plain: ' . json_encode($options));
     check(UserIdentityField::rowOptions(config(null)) === [], 'User Identity not configured: nothing offered');
+    $odd = UserIdentityField::rowOptions(config([el('users', [row('user', U_ALICE, 'alice', 'uid_alice', ''),
+        el('user', [leaf('name', 'carol'), leaf('alias', 'uid_carol')], ['uuid' => U_CAROL])])]));
+    check($odd === [U_ALICE => 'alice (a user, uid_alice) - switched off in User Identity', U_CAROL => 'carol (a user, uid_carol)'],
+        'an empty enabled element: off, as the rules hook reads it; none at all: on, the model\'s default: ' . json_encode($odd));
     Config::$root = config($identity);
     fresh(UserIdentityField::class);
     $loaded = (new UserIdentityField())->loaded(U_ALICE . ',' . U_GONE);

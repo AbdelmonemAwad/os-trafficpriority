@@ -98,7 +98,9 @@ class UserIdentityField extends BaseListField
                 $label = $item === 'group' ?
                     self::fill(gettext('%s (a group, %s)'), '%s (a group, %s)', $name, $alias) :
                     self::fill(gettext('%s (a user, %s)'), '%s (a user, %s)', $name, $alias);
-                if ((string)($row->enabled ?? '1') === '0') {
+                /* off unless 1, an empty element among them, as the rules hook reads it (Sources::rows());
+                   no element at all is on, the model's default */
+                if (isset($row->enabled) && trim((string)$row->enabled) !== '1') {
                     $label = self::fill(gettext('%s - switched off in User Identity'), '%s - switched off in User Identity', $label);
                 }
                 $found[strtolower($uuid)] = $label;
