@@ -9,7 +9,9 @@ pf_print_state.c prints them - every mark as 0x00, the value not being in the st
 reads, as an XGS 3300 on 26.7.9 showed) and /tmp/rules.error. Each class is found by its label alone,
 a rule written commented out is not one placed, and another rule's counters are never added to a
 class's; a connection pf marked coming in is counted once, when a class pf holds rules for marks; and
-a rule set pf refused is told from one it took by the two files' times.
+a rule set pf refused is told from one it took by the two files' times. And each class's groups and
+users, applications and categories with their tables, or why they have none, what pf holds in each table
+now - each asked once, none for a class switched off - and whether the two plugins are installed.
 
     python3 tools/test-status.py"""
 import importlib.util
@@ -220,6 +222,61 @@ with tempfile.TemporaryDirectory() as tmp:
     check('status: no rules file, pf not asked: said, and every class at nothing',
           (gone['rules_file'], gone['pf'], gone['marked'], sum(c['rules'] + c['written'] for c in gone['classes'])),
           (False, False, None, 0))
+
+    # groups and users, applications and categories: each one's table or why it has none, what pf holds in each
+    # table now - asked once a table, and not for a class switched off - and whether the two plugins are installed
+    alice = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a02'
+    gone = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a07'
+    with open(config, 'w', encoding='utf-8') as handle:
+        handle.write(
+            '<opnsense><OPNsense><TrafficPriority><general><enabled>1</enabled></general><classes>'
+            '<class uuid="%s"><enabled>1</enabled><description>Calls</description><dscp>46</dscp><users>%s</users>'
+            '<application>Zoom,Netflix</application><categories>VoIP</categories></class>'
+            '<class uuid="%s"><enabled>1</enabled><description>Gone</description><dscp>34</dscp><users>%s</users></class>'
+            '<class uuid="%s"><enabled>0</enabled><description>Off</description><dscp>40</dscp><users>%s</users></class>'
+            '</classes></TrafficPriority>'
+            '<UserIdentity><general><enabled>1</enabled></general><users><user uuid="%s"><enabled>1</enabled>'
+            '<name>alice</name><alias>uid_alice</alias></user></users></UserIdentity>'
+            '<AppControl><general><classify>1</classify></general></AppControl>'
+            '<Firewall><Alias><aliases>'
+            '<alias><name>uid_alice</name><type>external</type><enabled>1</enabled><description>User Identity: user alice'
+            '</description></alias>'
+            '<alias><name>appcontrol_Zoom</name><type>external</type><enabled>1</enabled><description>Application Control: '
+            'Zoom</description></alias>'
+            '<alias><name>appcontrol_cat_VoIP</name><type>external</type><enabled>1</enabled><description>Application '
+            'Control: category VoIP</description></alias>'
+            '</aliases></Alias></Firewall></OPNsense></opnsense>' % (U1, alice, U2, gone, U3, alice, alice))
+    asked = []
+
+    def counts(table):
+        asked.append(table)
+        return {'uid_alice': 1, 'appcontrol_Zoom': 14}.get(table)
+
+    got = status.status(config, rules, PF, project, None, errors, counts=counts,
+                        installed={'identity': True, 'appcontrol': False})
+    rows = {c['uuid']: c for c in got['classes']}
+    check('status: each item of a class - its table and what pf holds in it, or why it has none',
+          [(i['kind'], i['name'], i['table'], i['why'], i['count']) for i in rows[U1]['tables']],
+          [('user', 'alice', 'uid_alice', '', 1), ('application', 'Zoom', 'appcontrol_Zoom', '', 14),
+           ('application', 'Netflix', '', 'no-table', None), ('category', 'VoIP', 'appcontrol_cat_VoIP', '', None)])
+    check('status: each table asked once, a class switched off not asked', sorted(asked),
+          ['appcontrol_Zoom', 'appcontrol_cat_VoIP', 'uid_alice'])
+    check('status: a class with no table for its users now - idle, the users\' side; one with them, not',
+          (rows[U2]['idle'], rows[U2]['tables'][0]['why'], rows[U1]['idle']), ('users', 'row-gone', ''))
+    check('status: whether os-useridentity and os-appcontrol are installed, as given', got['others'],
+          {'identity': True, 'appcontrol': False})
+    check('status: their models looked for where they install them', (status.sources.IDENTITY_MODEL,
+                                                                     status.sources.APPCONTROL_MODEL),
+          ('/usr/local/opnsense/mvc/app/models/OPNsense/UserIdentity/UserIdentity.xml',
+           '/usr/local/opnsense/mvc/app/models/OPNsense/AppControl/AppControl.xml'))
+    check('status: neither installed here, by their files', status.status(config, rules, PF, project, None, errors,
+                                                                          counts=counts)['others'],
+          {'identity': False, 'appcontrol': False})
+    check('status: pf holding no such table - no count', [i['count'] for i in status.status(
+        config, rules, PF, project, None, errors, counts=lambda t: None)['classes'][0]['tables']], [None, None, None, None])
+    hw = status.status(config, placed, PF, project, None, errors, model=xgs, result=kept, counts=counts)['hardware']
+    check('status: the switch - the class of users with no table now keeps its place, idle, after the one the file holds',
+          (hw['classes'][U2]['why'], hw['classes'][U2]['idle'], [d['dscp'] for d in hw['dscps']]), ('hardware', True, [46, 34]))
 
     with open(config, 'w', encoding='utf-8') as handle:
         handle.write('<opnsense><OPNsense><TrafficPriority><classes><class uuid="%s"><description>Unflagged</description>'

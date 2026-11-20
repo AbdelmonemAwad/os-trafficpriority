@@ -13,10 +13,14 @@ os-xgs-npu is installed, whose drivers carry a connection's mark into hardware; 
 queues on an XGS appliance - what Apply gives the switch for the settings as they are now
 (apply.py's decision: each class's place, each rule of Firewall: Shaper with what the switch takes of
 it and what stays with the host), what the last Apply did, and whether the settings changed since.
+And for each class's groups and users, applications and categories (sources.py), its table or why it
+has none, and how many addresses pf holds in the table now (pfctl -t <table> -T show) - and whether
+os-useridentity and os-appcontrol are installed at all.
 
     status.py
 
-Read only: the switch itself is not read (os-xgs-npu's switch_qos.py show reads it, by hand).
+Read only: the switch itself is not read (os-xgs-npu's switch_qos.py show reads it, by hand), nor is
+anything of the other plugins' written.
 """
 
 import json
@@ -28,6 +32,7 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import apply  # noqa: E402
+import sources  # noqa: E402
 
 CONFIG = '/conf/config.xml'
 PFCTL = '/sbin/pfctl'
@@ -57,8 +62,10 @@ PROJECT = '/usr/local/opnsense/mvc/app/models/OPNsense/XGS/XGS.xml'
 
 
 def settings(path=None):
-    """(on, [each class's uuid, whether it is switched on, its description and its DSCP]); None when
-    config.xml cannot be read."""
+    """(on, [each class's uuid, whether it is switched on, its description, its DSCP, and its groups and
+    users, applications and categories - each with its table or why it has none (sources.resolve()'s
+    items) - and idle, the side with no table now: '', 'users' or 'apps']); None when config.xml cannot
+    be read."""
     try:
         root = ET.parse(path or CONFIG).getroot()
     except (OSError, ET.ParseError):
@@ -67,15 +74,32 @@ def settings(path=None):
     if own is None:
         return False, []
     on = (own.findtext('general/enabled') or '0') == '1'
+    found_aliases, found_rows, found_plugins = sources.aliases(root), sources.rows(root), sources.plugins(root)
     classes = []
     for node in own.findall('classes/class'):
+        resolved = sources.resolve({child.tag: (child.text or '') for child in node}, found_aliases, found_rows,
+                                   found_plugins)
         classes.append({
             'uuid': (node.get('uuid') or '').lower(),
             'enabled': (node.findtext('enabled') or '1') == '1',
             'description': node.findtext('description') or '',
             'dscp': (node.findtext('dscp') or '').strip(),
+            'tables': resolved['items'],
+            'idle': sources.idle_side(resolved),
         })
     return on, classes
+
+
+def pf_table(name):
+    """How many addresses pf holds in a table now (pfctl -t <table> -T show); None when pf holds no such
+    table or could not be asked."""
+    try:
+        done = subprocess.run([PFCTL, '-t', name, '-T', 'show'], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    return len([line for line in done.stdout.splitlines() if line.strip()])
 
 
 def tos(dscp):
@@ -223,18 +247,30 @@ def check_switch():
 
 
 def status(config=None, rules=None, pf_text=None, project=None, states=None, errors=None, model=None, result=None,
-           check=None):
+           check=None, counts=None, installed=None):
+    """counts: a table's name -> how many addresses pf holds in it (pf_table()); installed: whether
+    os-useridentity and os-appcontrol are, {'identity', 'appcontrol'} - from their models' files when not
+    given."""
     read = settings(config)
     if read is None:
         return {'error': 'config.xml could not be read'}
     on, classes = read
     lines = written(rules)
     held = loaded(pf_text)
+    counts = counts or pf_table
+    counted = {}
     for entry in classes:
         entry.update({'written': 0, 'not_placed': 0, 'rules': 0, 'packets': 0, 'bytes': 0, 'states': 0,
                       'created': 0})
         entry.update((lines or {}).get(entry['uuid'], {}))
         entry.update(held.get(entry['uuid'], {}))
+        # what each table of the class holds now, each table asked once - only while the class is on
+        for item in entry['tables']:
+            item['count'] = None
+            if item['table'] and entry['enabled'] and on:
+                if item['table'] not in counted:
+                    counted[item['table']] = counts(item['table'])
+                item['count'] = counted[item['table']]
     # the marks of the classes pf holds rules for: whether one of them marks at all is what counts, as
     # pfctl does not show which mark a state has (MARKED)
     marks = {tos(entry['dscp']) for entry in classes if entry['rules']} - {None}
@@ -247,6 +283,10 @@ def status(config=None, rules=None, pf_text=None, project=None, states=None, err
         'marked': marked(states, marks),
         'project': os.path.exists(project or PROJECT),
         'hardware': switch(config, model, result, rules, check),
+        'others': installed if installed is not None else {
+            'identity': os.path.exists(sources.IDENTITY_MODEL),
+            'appcontrol': os.path.exists(sources.APPCONTROL_MODEL),
+        },
     }
 
 

@@ -23,8 +23,10 @@ starts it in the background after the filter reload and goes on, can say so unti
 THE PLACES COME WITH THE FILTER RELOAD. While a class has a place in the switch, the rules hook writes
 before every class's rule the one that sets every IPv4 connection's DSCP to 0, both ways
 (OPNsense\\TrafficPriority\\Hardware); the switch is given the classes' DSCPs only while the rules file
-pf was given holds it, from the classes it holds a rule for (hardware.from_rules(), places_of()). When
-pf refused that rule set, the switch is left as it is: the rules pf still holds are the set before it.
+pf was given holds it, from the classes it holds a rule for (hardware.from_rules(), places_of()) - and
+from those whose groups and users, or applications and categories, have no table now (sources.py), which
+keep their place as the hook keeps it. When pf refused that rule set, the switch is left as it is: the
+rules pf still holds are the set before it.
 
 WHERE NOTHING IS SET: without os-xgs-npu (a plain OPNsense: pf alone marks), or with an os-xgs-npu that
 has no switch tool yet; on the XGS 136 family, whose switch os-xgs-npu only reads (its bus is shared
@@ -47,6 +49,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hardware  # noqa: E402
 import shaper_map  # noqa: E402
+import sources  # noqa: E402
 
 CONFIG = os.environ.get('TP_CONFIG', '/conf/config.xml')
 PY = os.environ.get('TP_PYTHON', '/usr/local/bin/python3')
@@ -123,9 +126,11 @@ def decide(root, model, text=''):
     else:
         why_not = ''
     cleared, written = hardware.from_rules(text)
-    places = hardware.places_of(classes, written, cleared)
+    # a class whose groups and users, or applications and categories, have no table now keeps its place
+    idle = {uuid for uuid, found in sources.resolve_all(classes, root).items() if sources.idle(found)}
+    places = hardware.places_of(classes, written, cleared, idle)
     marked = {hardware.dscp(c.get('dscp')) for c in hardware.ordered(classes)} - {None}
-    first = hardware.plan(classes, places, written)
+    first = hardware.plan(classes, places, written, idle=idle)
     own_minimum = {d['dscp'] for d in first['dscps']} if any(
         r['minimum'] is not None and r['why'] == 'hardware' for r in first['classes'].values()) else set()
     devices = (model or {}).get('devices') or {}
@@ -133,7 +138,7 @@ def decide(root, model, text=''):
                                  devices, shaper_map.interfaces(root),
                                  why_not=why_not or ('' if follow else 'follow-off'))
     following = follow and not why_not
-    plan = hardware.plan(classes, places, written, followed['shares'] if following else {})
+    plan = hardware.plan(classes, places, written, followed['shares'] if following else {}, idle=idle)
     rows = shaper_map.settle(followed['rules'], plan)
     conf = None
     if not why_not and not plan['refused']:

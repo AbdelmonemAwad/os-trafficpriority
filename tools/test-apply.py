@@ -12,7 +12,8 @@ a tool that runs out of time or says nothing said as such; Traffic Priority off,
 switch, a minimum beside a strict class, the XGS 136 family - what this plugin set put back, its settings
 file removed before the tool is asked, and nothing of another plugin's touched or overwritten; a rule set
 pf refused leaving the switch as it is; nothing at all without os-xgs-npu; clear for the plugin's
-removal; and the outcome kept for the page.
+removal; and the outcome kept for the page. And a class of users with no table now keeping its place, as
+the rules hook keeps it, while one whose table is there and whose rule the file lacks has none.
 
     python3 tools/test-apply.py"""
 import json
@@ -67,9 +68,11 @@ U = '6f3b0e2c-1a4d-4c8e-9b7a-2d5e8f1c3a0%d'
 
 
 def config(on='1', classes=(('46', ''),), follow='0', shaper=''):
+    """config.xml; a class is (DSCP, minimum) or (DSCP, minimum, more of its fields as XML)."""
     body = ''.join('<class uuid="%s"><enabled>1</enabled><sequence>%d</sequence>'
-                   '<dscp>%s</dscp><minimum>%s</minimum><ipprotocol>inet</ipprotocol></class>' % (U % i, 100 + i, d, m)
-                   for i, (d, m) in enumerate(classes))
+                   '<dscp>%s</dscp><minimum>%s</minimum><ipprotocol>inet</ipprotocol>%s</class>'
+                   % (U % i, 100 + i, c[0], c[1], c[2] if len(c) > 2 else '')
+                   for i, c in enumerate(classes))
     return ('<?xml version="1.0"?><opnsense><interfaces><wan><if>oxp3</if></wan></interfaces><OPNsense>'
             '<TrafficPriority><general><enabled>%s</enabled><follow_shaper>%s</follow_shaper></general><classes>%s'
             '</classes></TrafficPriority>%s</OPNsense></opnsense>' % (on, follow, body, shaper))
@@ -78,14 +81,14 @@ def config(on='1', classes=(('46', ''),), follow='0', shaper=''):
 CLEARING = 'match in inet from {any} to {any} scrub ( set-tos 0x00 ) label "trafficpriority-clear"\n'
 
 
-def rules(classes=(('46', ''),)):
+def rules(classes=(('46', ''),), without=()):
     """The rules file as the hook writes it for these classes on an XGS 3300: while one has a place - a
     DSCP above Best Effort - the rule setting every IPv4 connection's DSCP to 0 first, then the classes'
-    own."""
-    placed = any(int(d) not in (0, 1, 8) for d, _ in classes)
+    own - those of the classes numbered in without left out, as for a class with no table now."""
+    placed = any(int(c[0]) not in (0, 1, 8) for c in classes)
     return (CLEARING if placed else '') + ''.join('match in on igb1 inet scrub ( set-tos 0x%02x ) label '
-                                                  '"trafficpriority-%s"\n' % (int(d) << 2, U % i)
-                                                  for i, (d, _) in enumerate(classes))
+                                                  '"trafficpriority-%s"\n' % (int(c[0]) << 2, U % i)
+                                                  for i, c in enumerate(classes) if i not in without)
 
 
 SHAPER = ('<TrafficShaper><pipes><pipe uuid="p1"><enabled>1</enabled><bandwidth>100</bandwidth>'
@@ -177,6 +180,28 @@ with tempfile.TemporaryDirectory() as tmp:
     given(config(classes=both), ruled=rules(both).replace(CLEARING, ''))
     check('a rules file without the rule setting DSCP 0: nothing for the switch, what was set put back',
           (run(), calls(), settings()), ({'status': 'ok', 'message': 'cleared'}, [['clear', None, 'running']], None))
+
+    # a class of users with no table now (User Identity not installed): no rule of its in the file, its place
+    # kept all the same - the next class does not take it, and its rules come back without another Apply
+    idle = (('46', '', '<users>7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a02</users>'), ('34', ''))
+    given(config(classes=idle), ruled=rules(idle, without=(0,)))
+    run()
+    check('a class of users with no table now keeps its place: both DSCPs, in the page\'s order',
+          (settings()['classes'], result()['plan']['classes'][U % 0]['why'], result()['plan']['classes'][U % 0]['idle']),
+          ([{'dscp': 46, 'mask': 63, 'queue': 7}, {'dscp': 34, 'mask': 63, 'queue': 6}], 'hardware', True))
+    tabled = (('46', '', '<users>7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a02</users>'), ('34', ''))
+    given(config(classes=tabled), ruled=rules(tabled, without=(0,)))
+    with open(paths['TP_CONFIG'], encoding='utf-8') as handle:
+        text = handle.read()
+    with open(paths['TP_CONFIG'], 'w', encoding='utf-8') as handle:
+        handle.write(text.replace('</OPNsense>', '<UserIdentity><general><enabled>1</enabled></general><users><user '
+                                  'uuid="7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a02"><enabled>1</enabled><name>alice</name>'
+                                  '<alias>uid_alice</alias></user></users></UserIdentity><Firewall><Alias><aliases><alias>'
+                                  '<name>uid_alice</name><type>external</type><enabled>1</enabled><description>User '
+                                  'Identity: user alice</description></alias></aliases></Alias></Firewall></OPNsense>'))
+    run()
+    check('the same class with its table there, its rule not in the file: no place - the rules file says what pf was given',
+          (settings()['classes'], result()['plan']['classes'][U % 0]['why']), ([{'dscp': 34, 'mask': 63, 'queue': 7}], 'rule'))
 
     # the tool refuses, fails, runs out of time, says nothing
     given(config(), ruled=rules(), answer={'rc': 1, 'err': 'TCAM entry 3 is in use by something else (page 0 keys '

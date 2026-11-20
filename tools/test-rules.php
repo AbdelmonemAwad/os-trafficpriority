@@ -703,6 +703,16 @@ namespace {
     $odd[] = ['name' => "appcontrol_Bad\nname", 'type' => 'external', 'enabled' => '1', 'description' => 'Application Control: Bad'];
     check(count(ours(render(withTables([cls(U1, ['application' => 'Bad'])], '1', '1', $odd)))) === 0 &&
         strpos(logged(), 'no-table') !== false, 'an alias named with a line break: no table, no rule');
+    $long = 'uid_' . str_repeat('x', 28);
+    $longConfig = ['OPNsense' => [
+        'UserIdentity' => ['general' => ['enabled' => '1'], 'users' => ['user' => ['@attributes' => ['uuid' => U_ALICE],
+            'enabled' => '1', 'name' => 'alice', 'alias' => $long]]],
+        'Firewall' => ['Alias' => ['aliases' => ['alias' => ['name' => $long, 'type' => 'external', 'enabled' => '1',
+            'description' => 'User Identity: user alice']]]]]];
+    $found = Sources::resolveIn(['users' => U_ALICE], $longConfig);
+    check($found['from'] === [] && ($found['items'][0]['why'] ?? '') === 'not-its',
+        'an alias name of 32 characters, one row and one alias as config.xml\'s array holds them alone: not taken, as pf could ' .
+        'not hold it: ' . json_encode($found));
     check(Marking::rules(cls(U1, ['users' => U_ALICE]), U1, Marking::markKey()) === [] &&
         Marking::rules(cls(U1, ['users' => U_ALICE]), U1, Marking::markKey(), ['from' => ["uid_a\nb"], 'to' => null]) === [],
         'rules(): no tables given, or one no table could be named: no rule');
