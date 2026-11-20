@@ -418,7 +418,7 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   photographed: [dscp-2026-11-17.png](docs/images/measurements/dscp-2026-11-17.png). The same test
   had found Marked now at 0 during a marked run - pfctl prints every marked state `set-tos 0x00` -
   and the count now reads only that a mark is set;
-- **the rules** - `tools/test-rules.php`, 158 checks, run with OPNsense's own Plugin, FilterRule, Rule
+- **the rules** - `tools/test-rules.php`, 159 checks, run with OPNsense's own Plugin, FilterRule, Rule
   and Util of every release from 26.7 to 26.7.9, from opnsense/core's tags, and of opnsense/core's
   main branch of that day, under PHP 8.5. For sample classes it checks the line OPNsense
   writes - match, in, never quick, no state, no reply-to, the DSCP's ECN bits clear, the label -
@@ -468,7 +468,7 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   groups and users beside a source, applications beside a destination, and values no table can be
   found by, written by other means, refused; an alias whose name pf could not hold not taken; and the
   rule setting DSCP 0 still written for a class with no table, which keeps its place.
-  `tools/test-sources.py`, 42 checks: `sources.py` against the same cases. `tools/test-fields.php`, 11
+  `tools/test-sources.py`, 43 checks: `sources.py` against the same cases. `tools/test-fields.php`, 11
   checks: the dialog's lists of User Identity's groups and users and Application Control's
   applications and categories, read from the configuration - one switched off there marked, one saved
   and gone kept and marked, nothing where the plugin has none. `tools/test-mvc.php`: the refusals at

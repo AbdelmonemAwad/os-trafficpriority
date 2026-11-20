@@ -164,6 +164,12 @@ root = ET.fromstring('<opnsense><OPNsense><UserIdentity><general><enabled>1</ena
                      % (U_ALICE, long_name, long_name))
 check('an alias name of 32 characters: not taken, as pf could not hold it', whys(resolve({'users': U_ALICE}, root)),
       [(U_ALICE, '', 'not-its')])
+root = ET.fromstring('<opnsense><OPNsense><UserIdentity><general><enabled>1</enabled></general><users><user uuid="%s">'
+                     '<enabled>1</enabled><name>alice</name><alias>uid_alice</alias></user></users></UserIdentity><Firewall>'
+                     '<Alias><aliases><alias><name>uid_alice</name><type>external</type><enabled>1</enabled><description>my '
+                     'own list</description></alias></aliases></Alias></Firewall></OPNsense></opnsense>' % U_ALICE)
+check('an External alias of the row\'s name, described as the owner\'s and not as User Identity\'s: not taken',
+      whys(resolve({'users': U_ALICE}, root)), [(U_ALICE, '', 'not-its')])
 all_ = sources.resolve_all([{'uuid': 'a', 'users': U_GONE}, {'uuid': 'b', 'application': 'Zoom'}], config())
 check('resolve_all: each class by its uuid, config.xml read once', {u: sources.idle(r) for u, r in all_.items()},
       {'a': True, 'b': False})

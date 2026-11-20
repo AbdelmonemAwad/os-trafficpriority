@@ -713,6 +713,15 @@ namespace {
     check($found['from'] === [] && ($found['items'][0]['why'] ?? '') === 'not-its',
         'an alias name of 32 characters, one row and one alias as config.xml\'s array holds them alone: not taken, as pf could ' .
         'not hold it: ' . json_encode($found));
+    $ownConfig = ['OPNsense' => [
+        'UserIdentity' => ['general' => ['enabled' => '1'], 'users' => ['user' => ['@attributes' => ['uuid' => U_ALICE],
+            'enabled' => '1', 'name' => 'alice', 'alias' => 'uid_alice']]],
+        'Firewall' => ['Alias' => ['aliases' => ['alias' => ['name' => 'uid_alice', 'type' => 'external', 'enabled' => '1',
+            'description' => 'my own list']]]]]];
+    $found = Sources::resolveIn(['users' => U_ALICE], $ownConfig);
+    check($found['from'] === [] && ($found['items'][0]['why'] ?? '') === 'not-its',
+        'an External alias of the row\'s name, described as the owner\'s and not as User Identity\'s: not taken: ' .
+        json_encode($found));
     check(Marking::rules(cls(U1, ['users' => U_ALICE]), U1, Marking::markKey()) === [] &&
         Marking::rules(cls(U1, ['users' => U_ALICE]), U1, Marking::markKey(), ['from' => ["uid_a\nb"], 'to' => null]) === [],
         'rules(): no tables given, or one no table could be named: no rule');

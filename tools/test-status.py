@@ -233,7 +233,8 @@ with tempfile.TemporaryDirectory() as tmp:
             '<class uuid="%s"><enabled>1</enabled><description>Calls</description><dscp>46</dscp><users>%s</users>'
             '<application>Zoom,Netflix</application><categories>VoIP</categories></class>'
             '<class uuid="%s"><enabled>1</enabled><description>Gone</description><dscp>34</dscp><users>%s</users></class>'
-            '<class uuid="%s"><enabled>0</enabled><description>Off</description><dscp>40</dscp><users>%s</users></class>'
+            '<class uuid="%s"><enabled>0</enabled><description>Off</description><dscp>40</dscp><users>%s</users>'
+            '<application>Teams</application></class>'
             '</classes></TrafficPriority>'
             '<UserIdentity><general><enabled>1</enabled></general><users><user uuid="%s"><enabled>1</enabled>'
             '<name>alice</name><alias>uid_alice</alias></user></users></UserIdentity>'
@@ -245,6 +246,8 @@ with tempfile.TemporaryDirectory() as tmp:
             'Zoom</description></alias>'
             '<alias><name>appcontrol_cat_VoIP</name><type>external</type><enabled>1</enabled><description>Application '
             'Control: category VoIP</description></alias>'
+            '<alias><name>appcontrol_Teams</name><type>external</type><enabled>1</enabled><description>Application '
+            'Control: Teams</description></alias>'
             '</aliases></Alias></Firewall></OPNsense></opnsense>' % (U1, alice, U2, gone, U3, alice, alice))
     asked = []
 
@@ -259,8 +262,9 @@ with tempfile.TemporaryDirectory() as tmp:
           [(i['kind'], i['name'], i['table'], i['why'], i['count']) for i in rows[U1]['tables']],
           [('user', 'alice', 'uid_alice', '', 1), ('application', 'Zoom', 'appcontrol_Zoom', '', 14),
            ('application', 'Netflix', '', 'no-table', None), ('category', 'VoIP', 'appcontrol_cat_VoIP', '', None)])
-    check('status: each table asked once, a class switched off not asked', sorted(asked),
-          ['appcontrol_Zoom', 'appcontrol_cat_VoIP', 'uid_alice'])
+    check('status: each table asked once, the table of a class switched off alone not asked, its count none',
+          (sorted(asked), [(i['table'], i['count']) for i in rows[U3]['tables']]),
+          (['appcontrol_Zoom', 'appcontrol_cat_VoIP', 'uid_alice'], [('uid_alice', None), ('appcontrol_Teams', None)]))
     check('status: a class with no table for its users now - idle, the users\' side; one with them, not',
           (rows[U2]['idle'], rows[U2]['tables'][0]['why'], rows[U1]['idle']), ('users', 'row-gone', ''))
     check('status: whether os-useridentity and os-appcontrol are installed, as given', got['others'],
