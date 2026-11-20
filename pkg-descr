@@ -1,13 +1,17 @@
 Traffic Priority marks chosen connections with a DSCP: classes by
-interface, address, port and the DSCP a connection arrives with, each
-written as one pf match rule per interface, IP version and address
-pair, registered by the plugin at every filter reload and never added
-to the owner's own rules. pf writes the class's DSCP into every packet
-of its connections, both ways, the ECN bits kept. On a
-Sophos XGS, os-xgs-npu gives an IPv4 connection in hardware the DSCP pf
-marked it with (measured on an XGS 3300 with this plugin's own rule, on
-2026-11-17; on an XGS 136 not yet). Firewall: Shaper is neither read nor
-written, and no switch queue is set: that mapping is not measured yet.
+interface, address, port and the DSCP a connection arrives with, and by
+the groups and users of os-useridentity and the applications and
+categories of os-appcontrol, through those plugins' own pf tables. Each
+class is written as pf match rules, registered by the plugin at every
+filter reload and never added to the owner's own rules. pf writes the
+class's DSCP into every packet of its connections, both ways, the ECN
+bits kept, fixed as each connection opens. On a Sophos XGS, os-xgs-npu
+gives an IPv4 connection in hardware the DSCP pf marked it with. On an
+XGS 3300, os-xgs-npu's switch tool gives the first two DSCPs a queue of
+their own in the switch, strict or weighted with a minimum, the DSCP of
+every other IPv4 connection set to 0 meanwhile, and Firewall: Shaper is
+followed into the switch where the switch can do what a rule does; it is
+read, never written. Off by default.
 
 Plugin Changelog
 ================

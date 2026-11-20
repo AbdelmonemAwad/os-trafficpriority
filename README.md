@@ -25,12 +25,14 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
 > marked with a DSCP by pf. Tried the same day on a lab appliance, an XGS 3300; what was run is under
 > [What is tested](#what-is-tested).
 >
-> **The second part, written, not released (2026-11-19):** the switch's queues, a minimum for a class,
-> and Firewall: Shaper followed. It needs os-xgs-npu's switch tool (`switch_qos.py`, in os-xgs-npu's
-> pull request of the same day). Both ran on the second XGS 3300 on 2026-11-19: what was measured
-> there is said below, and what was not; os-xgs-npu turning port 0's pause off itself, which the
-> minimums need, ~~has not run on an appliance yet~~ ran there too, through this plugin's Apply and
-> after a full reboot.
+> ~~**The second part, written, not released (2026-11-19):**~~ **The second part, merged 2026-11-20
+> ([#5](https://github.com/AbdelmonemAwad/os-trafficpriority/pull/5)), not released:** the switch's
+> queues, a minimum for a class, and Firewall: Shaper followed. It needs os-xgs-npu's switch tool
+> (`switch_qos.py`, ~~in os-xgs-npu's pull request of the same day~~ in os-xgs-npu's main since
+> 2026-11-20, [os-xgs-npu#1201](https://github.com/AbdelmonemAwad/os-xgs-npu/pull/1201)). Both ran on
+> the second XGS 3300 on 2026-11-19: what was measured there is said below, and what was not;
+> os-xgs-npu turning port 0's pause off itself, which the minimums need, ~~has not run on an appliance
+> yet~~ ran there too, through this plugin's Apply and after a full reboot.
 >
 > **The third part, written, not released (2026-11-20):** a class's groups and users, of os-useridentity,
 > and applications and categories, of os-appcontrol, as those plugins' pf tables - read here, never
