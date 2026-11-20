@@ -459,7 +459,7 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   photographed: [dscp-2026-11-17.png](docs/images/measurements/dscp-2026-11-17.png). The same test
   had found Marked now at 0 during a marked run - pfctl prints every marked state `set-tos 0x00` -
   and the count now reads only that a mark is set;
-- **the rules** - `tools/test-rules.php`, 159 checks, run with OPNsense's own Plugin, FilterRule, Rule
+- **the rules** - `tools/test-rules.php`, 182 checks, run with OPNsense's own Plugin, FilterRule, Rule
   and Util of every release from 26.7 to 26.7.9, from opnsense/core's tags, and of opnsense/core's
   main branch of that day, under PHP 8.5. For sample classes it checks the line OPNsense
   writes - match, in, never quick, no state, no reply-to, the DSCP's ECN bits clear, the label -
@@ -475,7 +475,7 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   any field of it changed, and the message of OPNsense's own field type kept where it gave one; the
   status the page is given, an OPNsense with no key for the mark said, why each class makes no rule,
   and Apply's filter reload;
-- **the page's numbers** - `tools/test-status.py`, 47 checks: `status.py` reading a `rules.debug`, a
+- **the page's numbers** - `tools/test-status.py`, 56 checks: `status.py` reading a `rules.debug`, a
   `pfctl -v -s rules` and a `pfctl -v -s states` as OPNsense and pfctl write them, by each class's
   label - a connection with a mark set coming in counted once, the mark printed `set-tos 0x00` as
   pfctl prints every one, one going out or with no mark not counted, and nothing while no class
@@ -484,14 +484,14 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
 - **the switch's queues** (2026-11-19) - `tools/test-rules.php` writes, on an XGS 3300 with the switch
   tool, while a class has a queue in the switch, one rule setting every IPv4 connection's DSCP to 0
   before every class's rule, and none while none has - a class that makes no rule, Best Effort or CS1,
-  IPv6 alone - on another model or with no switch tool. `tools/test-hardware.py`, 50 checks: the places
+  IPv6 alone - on another model or with no switch tool. `tools/test-hardware.py`, 52 checks: the places
   taken from the classes the rules file holds a rule for, while it holds that one; the queue, strict or
   weighted, and the ports' scheduling; a minimum beside a strict class, or minimums past 100, giving the
   switch nothing; Firewall: Shaper's parts after them; the weight sequence, every queue at least one
   turn, 128 at most. `tools/test-shaper-map.py`, 58 checks: Firewall: Shaper configurations - pipes with
   a bandwidth, a mask and a scheduler, queues with weights and masks, rules by interface, direction,
   addresses, ports and DSCP, one after another on an interface - and for each rule what the switch takes,
-  the limit's step, and why the rest stays with the host. `tools/test-apply.py`, 33 checks: `apply.py`
+  the limit's step, and why the rest stays with the host. `tools/test-apply.py`, 35 checks: `apply.py`
   with a stand-in for os-xgs-npu's switch tool - the settings written and applied, "running" while it
   runs, a refusal said in the tool's words, a tool out of time or without a word, a refused plan or a
   rule set pf refused, a rules file without the rule setting DSCP 0, what the plugin set put back when
@@ -507,26 +507,36 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   twice taken once, the rest of the class in each rule; no rule at all - never one widened to every
   source or destination - for each reason a table is missing or not taken, with the reason in the log;
   groups and users beside a source, applications beside a destination, and values no table can be
-  found by, written by other means, refused; an alias whose name pf could not hold not taken; and the
-  rule setting DSCP 0 still written for a class with no table, which keeps its place.
-  `tools/test-sources.py`, 43 checks: `sources.py` against the same cases. `tools/test-fields.php`, 11
+  found by, written by other means, refused; an alias whose name pf could not hold not taken; the
+  rule setting DSCP 0 still written for a class with no table, which keeps its place, and the line
+  recording it in the rules file, commented out, for a class with nothing else wrong with it alone - a
+  class with no table and a source port no rule could hold has no place and no such line (the review's
+  P1); and a plugin removed, its settings left in config.xml, read as not installed by its model file.
+  `tools/test-sources.py`, 49 checks: `sources.py` against the same cases. `tools/test-fields.php`, 16
   checks: the dialog's lists of User Identity's groups and users and Application Control's
-  applications and categories, read from the configuration - one switched off there marked, one saved
-  and gone kept and marked, nothing where the plugin has none. `tools/test-mvc.php`: the refusals at
-  the save, never one for what the tables hold now, and the page's API passing each class's tables.
-  `tools/test-status.py`: each item's table, what pf holds in it - each table asked once - and the two
-  plugins installed or not. `tools/test-hardware.py` and `tools/test-apply.py`: a class with no table
-  keeping its place in the switch. `tools/test-page.py`, 17 checks: the page's script under node -
-  Their tables, In pf and the switch queue of such a class, and the lines that say a plugin is not
-  installed. `tools/test-install.py`: the model's version step run by `install.sh` and by the
-  package's `post-install.sh`;
-- **the strings** - `tools/check-strings.py`: each of the 236 strings the GUI shows - the page, the
+  applications and categories, read from the configuration - one switched off there marked, an empty
+  enabled element among them, one saved and gone kept and marked, nothing where the plugin has none or
+  is not installed, and a choice saved before its removal kept, marked as not installed.
+  `tools/test-mvc.php`: the refusals at the save, never one for what the tables hold now, and the page's
+  API passing each class's tables. `tools/test-status.py`: each item's table, what pf holds in each -
+  every table's count from one `pfctl -vv -s Tables`, as FreeBSD's source prints it - the two plugins
+  installed or not by their model files, how many tables Application Control keeps, and no class idle
+  while Traffic Priority is off. `tools/test-hardware.py` and `tools/test-apply.py`: a class the reload
+  left idle keeping its place in the switch by that line of the rules file, and the review's P1 given
+  the places the hook gave it. `tools/test-page.py`, 28 checks: the page's script under node - Their
+  tables, In pf - what pf holds first, then what the next filter reload writes - and the switch queue of
+  such a class, the lines that say a plugin is not installed or Application Control keeps no table, and
+  what the help, the Applied tab and this README say of a user's table and of the first call to a
+  server new to an application's table. `tools/test-install.py`: the model's version step run by
+  `install.sh` and by the package's `post-install.sh`, and every test of `tools/` left out of the
+  archive an appliance takes;
+- **the strings** - `tools/check-strings.py`: each of the 240 strings the GUI shows - the page, the
   dialog's labels, help and the DSCPs' names, the model's messages, the menu, the ACL and the PHP's -
   is listed in `source.json`. The first part's have their Arabic in opnsense-arabic (pull request
-  [#80](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/80), merged 2026-11-18); the second
-  part's are in its pull request [#86](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/86), and
-  43 of the third part's have none yet: `tools/check-strings.py` lists them;
-- **the installation** - `tools/test-install.py`, 35 checks: `install/install.sh`,
+  [#80](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/80), merged 2026-11-18), and the second
+  part's (pull request [#86](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/86), merged
+  2026-11-20); 47 of the third part's have none yet: `tools/check-strings.py` lists them;
+- **the installation** - `tools/test-install.py`, 36 checks: `install/install.sh`,
   `install/uninstall.sh`, the package's `post-install.sh` and `post-deinstall.sh`, and
   `place-menu.sh`, run in a temporary root with stand-ins for `service`, `configctl` and `pfctl` -
   every file laid down with its mode and taken away again, the menu in XGS or Firewall, nothing
@@ -543,7 +553,8 @@ Later that day a review's fixes, and the behaviours newly tested, were taken out
 of them - in Marking, the hook, the model, the page's API, `status.py`, the strings check, the
 install scripts and `place-menu.sh` - and the tests caught 74. The one left changes nothing: without
 its own `rm` of the menu file, `uninstall.sh`'s `rm -rf` of the model's directory takes the file
-with it.
+with it. On 2026-11-20 the third part's review fixes were checked the same way: their tests, run on the
+code before the fixes, failed on each - and pass on it now.
 
 Not tested: the XGS 136; IPv6 on an appliance; `install.sh` and `uninstall.sh` on an appliance; the
 page in a browser; of the second part, what the second XGS 3300 did not measure on 2026-11-19
