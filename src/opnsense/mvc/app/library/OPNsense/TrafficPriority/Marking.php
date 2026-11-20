@@ -75,8 +75,8 @@ use OPNsense\Firewall\Util;
  *    $name (Rule.php:61-66, 87-93 in 26.7 and 26.7.9), which OPNsense defines in the rules file, with its
  *    table, for every alias of config.xml, switched on or not (filter_generate_aliases(),
  *    filter.inc:574-627: the table at 619, the macro at 621) - a name Rule does not know as an alias it
- *    writes commented out (Rule.php:94-98), so a rule never names a table pfctl is not given. Only the tables Sources finds the other plugin's own, External and switched on are
- *    written at all.
+ *    writes commented out (Rule.php:94-98), so a rule never names a table pfctl is not given. Only the
+ *    tables Sources finds the other plugin's own, External and switched on are written at all.
  *  - A class whose groups and users have no table now, or whose applications and categories have none,
  *    makes no rule - never one from every source or to every destination. The rules hook says so in the
  *    system log, and the page says why for each. It keeps its place in the switch (Hardware::places()),
