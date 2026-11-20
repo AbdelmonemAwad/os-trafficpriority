@@ -113,9 +113,10 @@ def pf_table(name):
 def pf_tables(text):
     """{table: how many addresses pf holds in it} from pfctl -vv -s Tables, which prints each active table of
     the main ruleset as its seven flags, a tab and its name, then its counters, the first "\\tAddresses:" and
-    the number (pfctl_table.c's print_table() and print_tstats() in FreeBSD 15.1) - every table's count in one
-    call, where -T show prints every address of each to count it. A table in an anchor (name@anchor) is not
-    one of the aliases' and is left out; None when nothing could be read."""
+    the number (pfctl_table.c's print_table() and print_tstats(), read in FreeBSD's main branch of
+    2026-11-16; not yet run on 15.1) - every table's count in one call, where -T show prints every address
+    of each to count it. A table in an anchor (name@anchor) is not one of the aliases' and is left out;
+    None when nothing could be read."""
     if text is None:
         return None
     out = {}

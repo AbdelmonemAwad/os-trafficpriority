@@ -153,8 +153,8 @@ with tempfile.TemporaryDirectory() as tmp:
           [status.marked(STATES, marks) for marks in ({'0xb8'}, {'0x88'}, {'0x00'}, {'0xb8', '0x20'})], [2, 2, 2, 2])
     check('pf states: no class marking, 0', (status.marked(STATES, set()), status.marked(IN_MARKED, set())), (0, 0))
 
-    # pfctl -vv -s Tables as FreeBSD 15.1's pfctl_table.c prints it (print_table(), print_tstats()): each active
-    # table's flags, a tab and its name, then its counters - every table's count in one call
+    # pfctl -vv -s Tables as FreeBSD's pfctl_table.c prints it (print_table(), print_tstats(), its main branch):
+    # each active table's flags, a tab and its name, then its counters - every table's count in one call
     stats = ''.join('\t%s [ Packets: 0                  Bytes: 0                  ]\n' % op for op in (
         'In/Block:   ', 'In/Pass:    ', 'In/XPass:   ', 'Out/Block:  ', 'Out/Pass:   ', 'Out/XPass:  '))
     TABLES = ''.join('%s\t%s\n\tAddresses:   %d\n\tCleared:     Thu Nov 20 10:00:00 2026\n'
