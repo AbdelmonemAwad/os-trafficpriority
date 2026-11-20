@@ -16,6 +16,12 @@ read, never written. Off by default.
 Plugin Changelog
 ================
 
+1.0.1
+
+* Phase 2: classes in the switch's queues, minimums, and Firewall: Shaper
+  followed in hardware
+* Phase 3: classes by groups and users, and by applications and categories
+
 1.0.0
 
 * Initial release
