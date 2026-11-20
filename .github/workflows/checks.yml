@@ -89,9 +89,20 @@ jobs:
       - name: The model and the page's API, with OPNsense 26.7.9's classes
         run: OPNSENSE_CORE=core-26.7.9/src php tools/test-mvc.php
 
+      # The model's fields of the other plugins' lists: the groups and users of os-useridentity, and the
+      # applications and categories os-appcontrol keeps a table for, read from the configuration.
+      - name: "Groups and users, applications and categories offered from the other plugins' own lists"
+        run: php tools/test-fields.php
+
       # status.py's reading of the rules pf was given and of pf's own counters, by each class's label.
       - name: The page says what pf holds of each class
         run: python3 tools/test-status.py
+
+      # sources.py: the tables of os-useridentity's groups and users and os-appcontrol's applications and
+      # categories a class names, found in config.xml as the rules hook's Sources.php finds them - the same
+      # cases as tools/test-rules.php - each one's table, or why it has none.
+      - name: The other plugins' tables a class names
+        run: python3 tools/test-sources.py
 
       # hardware.py: which classes have a place in an XGS appliance's switch queues - two DSCPs, in the
       # page's order - which queue each takes, strict or weighted, the ports' scheduling, and the chip's
@@ -110,6 +121,12 @@ jobs:
       # refusal said, what the plugin set put back when it is off or removed, another plugin's left alone.
       - name: The switch set from Apply, and put back
         run: python3 tools/test-apply.py
+
+      # The page's script under node, with stand-ins for jQuery and OPNsense's page helpers: the tables of a
+      # class's groups and users, applications and categories, a class with no table on one side, and the
+      # lines that say os-useridentity or os-appcontrol is not installed. GitHub's runners have node.
+      - name: "The page: each class's tables, and the other plugins not installed"
+        run: python3 tools/test-page.py
 
       # install/install.sh copies src/ whole; install/uninstall.sh names what it removes.
       - name: Every file the installer lays down is removed by the uninstaller

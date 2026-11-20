@@ -124,10 +124,12 @@ namespace {
     }
     require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Marking.php';
     require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Hardware.php';
+    require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Sources.php';
     require $root . '/src/etc/inc/plugins.inc.d/trafficpriority.inc';
 
     use OPNsense\TrafficPriority\Hardware;
     use OPNsense\TrafficPriority\Marking;
+    use OPNsense\TrafficPriority\Sources;
 
     /* no switch tool here unless a test says so */
     Hardware::$tool = false;
@@ -225,10 +227,19 @@ namespace {
         return $lines;
     }
 
+    /* the plugin's rules: every line of its labels but the records of a class left idle */
     function ours($lines)
     {
         return array_values(array_filter($lines, function ($line) {
-            return strpos($line, 'label "trafficpriority-') !== false;
+            return strpos($line, 'label "trafficpriority-') !== false && strpos($line, 'label "trafficpriority-idle-') === false;
+        }));
+    }
+
+    /* the lines recording a class the reload left idle (Marking::idleRecord()) */
+    function records($lines)
+    {
+        return array_values(array_filter($lines, function ($line) {
+            return strpos($line, 'label "trafficpriority-idle-') !== false;
         }));
     }
 
@@ -555,6 +566,258 @@ namespace {
     };
     render(cfg([cls(U1)]), null, $keys);
     check($keys->seen === [[Marking::markKey()]], 'the hook writes the mark with markKey()\'s key: ' . json_encode($keys->seen));
+
+    /*
+     * Groups and users of os-useridentity, applications and categories of os-appcontrol (svc-2-12, top-08):
+     * their tables - aliases of type External those plugins write, found here in config.xml - as a class's
+     * source and destination, written by OPNsense's Rule as the aliases' macros; nothing while one side has
+     * no table, never a rule widened to every source or destination. The same cases as
+     * tools/test-sources.py gives sources.py, which the page and the switch read.
+     */
+    const G_STAFF = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a01';
+    const U_ALICE = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a02';
+    const U_BOB = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a03';
+    const U_OFF = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a04';
+    const U_UNAPPLIED = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a05';
+    const U_STRANGER = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a06';
+    const U_GONE = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a07';
+
+    /* the aliases the other plugins wrote, as config.xml holds them - and as OPNsense's Alias model gives
+       them to Rule, which writes an alias it knows as its macro */
+    $aliasesGiven = [
+        ['name' => 'uid_staff', 'type' => 'external', 'enabled' => '1', 'description' => 'User Identity: group Staff'],
+        ['name' => 'uid_alice', 'type' => 'external', 'enabled' => '1', 'description' => 'User Identity: user alice'],
+        ['name' => 'uid_bob', 'type' => 'external', 'enabled' => '0', 'description' => 'User Identity: user bob'],
+        /* an alias of the name a row gives that the owner made: not User Identity's */
+        ['name' => 'uid_stranger', 'type' => 'host', 'enabled' => '1', 'description' => 'my own list'],
+        ['name' => 'appcontrol_Zoom', 'type' => 'external', 'enabled' => '1', 'description' => 'Application Control: Zoom'],
+        ['name' => 'appcontrol_Teams', 'type' => 'external', 'enabled' => '1', 'description' => 'Application Control: Teams'],
+        ['name' => 'appcontrol_YouTube', 'type' => 'external', 'enabled' => '0', 'description' => 'Application Control: YouTube'],
+        ['name' => 'appcontrol_cat_VoIP', 'type' => 'external', 'enabled' => '1',
+            'description' => 'Application Control: category VoIP'],
+    ];
+    \OPNsense\Firewall\Alias::$given = array_merge(\OPNsense\Firewall\Alias::$given, array_map(function ($a) {
+        return ['name' => $a['name'], 'type' => $a['type'], 'content' => ''];
+    }, $aliasesGiven));
+
+    /* both plugins installed - their model files there - unless a case says otherwise (Sources::installed()) */
+    const BOTH = ['identity' => true, 'appcontrol' => true];
+    Sources::$installed = BOTH;
+
+    /* the configuration with User Identity's and Application Control's settings and the aliases beside the
+       classes; $identity / $classify '' leave that plugin's settings out, as where it was never set */
+    function withTables($classes, $identity = '1', $classify = '1', $aliases = null)
+    {
+        global $aliasesGiven;
+        $config = cfg($classes);
+        $config['OPNsense']['Firewall'] = ['Alias' => ['aliases' => ['alias' => $aliases ?? $aliasesGiven]]];
+        if ($identity !== '') {
+            $config['OPNsense']['UserIdentity'] = [
+                'general' => ['enabled' => $identity],
+                'groups' => ['group' => [['@attributes' => ['uuid' => G_STAFF], 'enabled' => '1', 'name' => 'Staff',
+                    'alias' => 'uid_staff']]],
+                'users' => ['user' => [
+                    ['@attributes' => ['uuid' => U_ALICE], 'enabled' => '1', 'name' => 'alice', 'alias' => 'uid_alice'],
+                    ['@attributes' => ['uuid' => U_BOB], 'enabled' => '1', 'name' => 'bob', 'alias' => 'uid_bob'],
+                    ['@attributes' => ['uuid' => U_OFF], 'enabled' => '0', 'name' => 'carol', 'alias' => 'uid_carol'],
+                    ['@attributes' => ['uuid' => U_UNAPPLIED], 'enabled' => '1', 'name' => 'dave', 'alias' => 'uid_dave'],
+                    ['@attributes' => ['uuid' => U_STRANGER], 'enabled' => '1', 'name' => 'erin', 'alias' => 'uid_stranger'],
+                ]],
+            ];
+        }
+        if ($classify !== '') {
+            $config['OPNsense']['AppControl'] = ['general' => ['classify' => $classify]];
+        }
+        return $config;
+    }
+
+    $staff = ours(render(withTables([cls(U1, ['interface' => 'lan', 'users' => G_STAFF])])));
+    $want = 'match in on igb1 inet from $uid_staff to {any} scrub ( set-tos 0xb8 ) label "trafficpriority-' . U1 .
+        '" # Traffic Priority: Voice';
+    check(($staff[0] ?? '') === $want && count($staff) === 1,
+        "a group: its table the source, as OPNsense writes an alias:\n      want $want\n      got  " . json_encode($staff));
+    $zoom = ours(render(withTables([cls(U1, ['interface' => '', 'application' => 'Zoom'])])));
+    check(count($zoom) === 1 && strpos($zoom[0], 'match in inet from {any} to $appcontrol_Zoom scrub ( set-tos 0xb8 )') === 0,
+        'an application alone, on every interface: its table the destination: ' . json_encode($zoom));
+    $both = ours(render(withTables([cls(U1, ['users' => G_STAFF, 'application' => 'Zoom', 'protocol' => 'udp',
+        'destination_port' => '8801'])])));
+    check(count($both) === 1 && strpos($both[0], 'match in on igb1 inet proto udp from $uid_staff to $appcontrol_Zoom port {8801} ') === 0 &&
+        pf_shape($both[0]), 'a group, an application and a port together: one rule, every condition of it: ' . json_encode($both));
+    $four = ours(render(withTables([cls(U1, ['users' => G_STAFF . ',' . U_ALICE, 'application' => 'Zoom,Teams'])])));
+    check(count($four) === 4 && count(array_unique($four)) === 4 && strpos(implode("\n", $four), 'from $uid_alice to $appcontrol_Teams') !== false,
+        'two groups and users, two applications: a rule for each pair: ' . json_encode($four));
+    $cat = ours(render(withTables([cls(U1, ['application' => 'Zoom', 'categories' => 'VoIP'])])));
+    check(count($cat) === 2 && strpos($cat[1] ?? '', ' to $appcontrol_cat_VoIP ') !== false,
+        'an application and a category: a rule to each table: ' . json_encode($cat));
+    $v46 = ours(render(withTables([cls(U1, ['users' => U_ALICE, 'ipprotocol' => 'inet46'])])));
+    check(count($v46) === 2 && strpos($v46[0], ' inet from $uid_alice ') !== false && strpos($v46[1], ' inet6 from $uid_alice ') !== false,
+        'a table holds either version: IPv4 and IPv6, a rule each: ' . json_encode($v46));
+    $twice = ours(render(withTables([cls(U1, ['users' => U_ALICE . ',' . strtoupper(U_ALICE)])])));
+    check(count($twice) === 1, 'a user named twice: one table, one rule');
+    foreach ($four as $line) {
+        check(pf_shape($line), "pfctl's shape: $line");
+    }
+
+    /* no table on one side: no rule at all - and the log says why */
+    /* User Identity's settings as its removal leaves them (P6): Enabled 1, the rows, and no alias of theirs */
+    $leftByRemoval = withTables([cls(U1, ['users' => U_ALICE])], '1', '1', array_values(array_filter($aliasesGiven, function ($a) {
+        return strpos($a['name'], 'uid_') !== 0;
+    })));
+    $cases = [
+        'User Identity off' => [withTables([cls(U1, ['users' => U_ALICE])], '0'), 'groups and users now: identity-off'],
+        'User Identity installed and never set - off, its default' => [withTables([cls(U1, ['users' => U_ALICE])], ''),
+            'groups and users now: identity-off'],
+        'User Identity removed, its settings left as its removal leaves them' => [$leftByRemoval,
+            'groups and users now: no-identity', ['identity' => false, 'appcontrol' => true]],
+        'User Identity not installed, its aliases still there' => [withTables([cls(U1, ['users' => U_ALICE])]),
+            'groups and users now: no-identity', ['identity' => false, 'appcontrol' => true]],
+        'a row switched off' => [withTables([cls(U1, ['users' => U_OFF])]), 'groups and users now: row-off'],
+        'a row no longer there' => [withTables([cls(U1, ['users' => U_GONE])]), 'groups and users now: row-gone'],
+        'a row not applied in User Identity yet' => [withTables([cls(U1, ['users' => U_UNAPPLIED])]), 'groups and users now: no-table'],
+        'a row whose alias is the owner\'s' => [withTables([cls(U1, ['users' => U_STRANGER])]), 'groups and users now: not-its'],
+        'a user\'s table switched off' => [withTables([cls(U1, ['users' => U_BOB])]), 'groups and users now: table-off'],
+        'Application Control not installed, its settings and an alias of its left' => [withTables([cls(U1, ['application' => 'Zoom'])]),
+            'applications and categories now: no-appcontrol', ['identity' => true, 'appcontrol' => false]],
+        'Application Control not classifying' => [withTables([cls(U1, ['application' => 'Zoom'])], '1', '0'),
+            'applications and categories now: appcontrol-off'],
+        'an application without a table' => [withTables([cls(U1, ['application' => 'Netflix'])]),
+            'applications and categories now: no-table'],
+        'an application\'s table switched off' => [withTables([cls(U1, ['application' => 'YouTube'])]),
+            'applications and categories now: table-off'],
+        'a category named as an application' => [withTables([cls(U1, ['application' => 'VoIP'])]),
+            'applications and categories now: no-table'],
+        'an application named as a category' => [withTables([cls(U1, ['categories' => 'Zoom'])]),
+            'applications and categories now: no-table'],
+        'a user with a table, but no application with one' => [withTables([cls(U1, ['users' => U_ALICE, 'application' => 'Netflix'])]),
+            'applications and categories now: no-table'],
+    ];
+    foreach ($cases as $what => $case) {
+        Sources::$installed = $case[2] ?? BOTH;
+        $lines = render($case[0]);
+        Sources::$installed = BOTH;
+        check(count(ours($lines)) === 0 && strpos(logged(), $case[1]) !== false,
+            $what . ': no rule - none from every source or to every destination - and the log says why: ' . logged());
+        /* the reload records that it left the class idle, in the rules file, by a line pf never reads */
+        $want = '# match in inet from {any} to {any} label "trafficpriority-idle-' . U1 . '" # Traffic Priority: Voice - ' .
+            'makes no rule: no table for its ' . $case[1];
+        check(records($lines) === [$want], $what . ": the reload's record of the class left idle, commented out:\n" .
+            "      want $want\n      got  " . json_encode(records($lines)));
+    }
+    $never = ours(render(withTables([cls(U1, ['interface' => '', 'application' => 'Zoom'])], '1', '')));
+    check(count($never) === 1 && strpos($never[0], ' to $appcontrol_Zoom ') !== false,
+        'Application Control installed and never set - classifying, its default - its table there: taken: ' . json_encode($never));
+    $recorded = records(render(withTables([cls(U1, ['users' => U_GONE, 'description' => "Calls\nnow"])])));
+    check(count($recorded) === 1 && count(explode("\n", $recorded[0])) === 1 && strpos($recorded[0], '# ') === 0 &&
+        strpos($recorded[0], '# Traffic Priority: Calls now - makes no rule: ') !== false,
+        'a record\'s description with a line break: still one line, a comment: ' . json_encode($recorded));
+    check(records(render(withTables([cls(U1, ['users' => U_ALICE])]))) === [] &&
+        records(render(withTables([cls(U1, ['users' => U_GONE, 'enabled' => '0'])]))) === [] &&
+        records(render(cfg([cls(U1, ['users' => U_GONE])], '0'))) === [],
+        'no record for a class with its tables, for one switched off, or with Traffic Priority off');
+    $part = ours(render(withTables([cls(U1, ['users' => U_ALICE . ',' . U_OFF . ',' . U_GONE, 'application' => 'Zoom,Netflix'])])));
+    check(count($part) === 1 && strpos($part[0], 'from $uid_alice to $appcontrol_Zoom') !== false,
+        'of several, the ones with a table: one rule for them: ' . json_encode($part));
+    $idleAll = render(withTables([cls(U1, ['users' => U_ALICE]), cls(U2, ['description' => 'Port', 'users' => U_GONE])], '0'));
+    check(count(ours($idleAll)) === 0 && count(array_filter($idleAll, function ($l) {
+        return strpos($l, '#') !== 0 && (strpos($l, ' from any ') !== false || strpos($l, 'from {any}') !== false);
+    })) === 0 && count(records($idleAll)) === 2,
+        'no table for any of them: not one rule of the classes, none from any pf reads - their two records commented out');
+
+    /* the model's refusals, written by other means: no rule */
+    foreach ([
+        ['users' => U_ALICE, 'source_net' => '192.0.2.10', 'interface' => '', 'why' => '(sources)'],
+        ['application' => 'Zoom', 'destination_net' => '198.51.100.0/24', 'why' => '(destinations)'],
+        ['users' => 'not-a-uuid', 'why' => '(users)'],
+        ['application' => "Zoom\npass in quick all", 'why' => '(application)'],
+        ['categories' => "Vo\nIP", 'why' => '(application)'],
+    ] as $fields) {
+        $why = $fields['why'];
+        unset($fields['why']);
+        $lines = render(withTables([cls(U1, $fields)]));
+        check(count(ours($lines)) === 0 && strpos(logged(), $why) !== false && strpos(implode("\n", $lines), 'pass in quick all') === false &&
+            records($lines) === [], json_encode($fields) . ': no rule, no record of a class left idle, and the log says ' . $why);
+    }
+    /* tables alone narrow a class; a name that could break a line never reaches the rules file */
+    check(count(ours(render(withTables([cls(U1, ['interface' => '', 'users' => U_ALICE])])))) === 1,
+        'a user alone, on every interface: written - the table narrows it');
+    $odd = $aliasesGiven;
+    $odd[] = ['name' => "appcontrol_Bad\nname", 'type' => 'external', 'enabled' => '1', 'description' => 'Application Control: Bad'];
+    check(count(ours(render(withTables([cls(U1, ['application' => 'Bad'])], '1', '1', $odd)))) === 0 &&
+        strpos(logged(), 'no-table') !== false, 'an alias named with a line break: no table, no rule');
+    $long = 'uid_' . str_repeat('x', 28);
+    $longConfig = ['OPNsense' => [
+        'UserIdentity' => ['general' => ['enabled' => '1'], 'users' => ['user' => ['@attributes' => ['uuid' => U_ALICE],
+            'enabled' => '1', 'name' => 'alice', 'alias' => $long]]],
+        'Firewall' => ['Alias' => ['aliases' => ['alias' => ['name' => $long, 'type' => 'external', 'enabled' => '1',
+            'description' => 'User Identity: user alice']]]]]];
+    $found = Sources::resolveIn(['users' => U_ALICE], $longConfig);
+    check($found['from'] === [] && ($found['items'][0]['why'] ?? '') === 'not-its',
+        'an alias name of 32 characters, one row and one alias as config.xml\'s array holds them alone: not taken, as pf could ' .
+        'not hold it: ' . json_encode($found));
+    $ownConfig = ['OPNsense' => [
+        'UserIdentity' => ['general' => ['enabled' => '1'], 'users' => ['user' => ['@attributes' => ['uuid' => U_ALICE],
+            'enabled' => '1', 'name' => 'alice', 'alias' => 'uid_alice']]],
+        'Firewall' => ['Alias' => ['aliases' => ['alias' => ['name' => 'uid_alice', 'type' => 'external', 'enabled' => '1',
+            'description' => 'my own list']]]]]];
+    $found = Sources::resolveIn(['users' => U_ALICE], $ownConfig);
+    check($found['from'] === [] && ($found['items'][0]['why'] ?? '') === 'not-its',
+        'an External alias of the row\'s name, described as the owner\'s and not as User Identity\'s: not taken: ' .
+        json_encode($found));
+    /* config.inc's parser reads a row's <alias> as a list of one, alias being one of its list tags (for
+       Firewall: Aliases): the lab on the second XGS 3300 found every group and user without a table so */
+    $parsedConfig = ['OPNsense' => [
+        'UserIdentity' => ['general' => ['enabled' => '1'],
+            'groups' => ['group' => ['@attributes' => ['uuid' => G_STAFF], 'enabled' => '1', 'name' => 'Staff',
+                'alias' => ['uid_staff']]],
+            'users' => ['user' => [
+                ['@attributes' => ['uuid' => U_ALICE], 'enabled' => '1', 'name' => 'alice', 'alias' => ['uid_alice']],
+                ['@attributes' => ['uuid' => U_BOB], 'enabled' => '1', 'name' => 'bob', 'alias' => ['uid_bob']]]]],
+        'Firewall' => ['Alias' => ['aliases' => ['alias' => [
+            ['name' => 'uid_staff', 'type' => 'external', 'enabled' => '1', 'description' => 'User Identity: group Staff'],
+            ['name' => 'uid_alice', 'type' => 'external', 'enabled' => '1', 'description' => 'User Identity: user alice'],
+            ['name' => 'uid_bob', 'type' => 'external', 'enabled' => '1', 'description' => 'User Identity: user bob']]]]]]];
+    $found = Sources::resolveIn(['users' => G_STAFF . ',' . U_ALICE], $parsedConfig);
+    check($found['from'] === ['uid_staff', 'uid_alice'] && ($found['items'][0]['why'] ?? 'x') === '' &&
+        ($found['items'][1]['why'] ?? 'x') === '',
+        'a row\'s alias as config.inc parses it, a list of one: its table taken, for a group and a user: ' . json_encode($found));
+    check(Marking::rules(cls(U1, ['users' => U_ALICE]), U1, Marking::markKey()) === [] &&
+        Marking::rules(cls(U1, ['users' => U_ALICE]), U1, Marking::markKey(), ['from' => ["uid_a\nb"], 'to' => null]) === [],
+        'rules(): no tables given, or one no table could be named: no rule');
+
+    /* the switch: a class with users keeps its place whatever the tables are - the rule setting DSCP 0 is
+       written while it has one, so the switch's entry, set by Apply, never meets an unmarked DSCP */
+    Hardware::$tool = true;
+    Hardware::$serial = 'X AMDA0202-0004 Y';
+    $placed = render(withTables([cls(U1, ['users' => U_ALICE])], '0'));
+    check(count(array_filter($placed, function ($l) {
+        return strpos($l, 'label "trafficpriority-clear"') !== false;
+    })) === 1 && count(ours($placed)) === 1 && count(records($placed)) === 1,
+        'a class of users with no table now: the rule setting DSCP 0 alone - its place kept - and the record of it, for apply.py');
+    /* the review's P1: a class with no table and something else wrong with it - a source port no rule could
+       hold, written by other means - has no place: neither the hook gives it one nor its record is written,
+       so apply.py, which takes the idle classes from the records, gives the next classes 7 and 6 too */
+    $p1 = [cls(U1, ['description' => 'Calls', 'sequence' => '10', 'users' => U_GONE, 'source_port' => '5o6O']),
+        cls(U2, ['description' => 'Games', 'sequence' => '20', 'protocol' => 'udp', 'destination_port' => '3074', 'dscp' => '34']),
+        cls(U3, ['description' => 'Video', 'sequence' => '30', 'protocol' => 'udp', 'destination_port' => '8801', 'dscp' => '26'])];
+    $lines = render(withTables($p1));
+    $byUuid = [];
+    foreach ($p1 as $c) {
+        $byUuid[$c['@attributes']['uuid']] = $c;
+    }
+    check(Hardware::places($byUuid) === [U1 => 'rule', U2 => 'hardware', U3 => 'hardware'] && Hardware::dscps($byUuid) === [34, 26] &&
+        records($lines) === [] && count(ours($lines)) === 3 && strpos(ours($lines)[0], 'trafficpriority-clear') !== false &&
+        strpos(logged(), 'class "Calls" makes no rule (port)') !== false,
+        'P1: Calls - no table, and a source port no rule could hold - no place and no record; Games and Video placed, 34 and 26: ' .
+        json_encode([Hardware::places($byUuid), records($lines), ours($lines)]));
+    $p1[0]['source_port'] = '';
+    $byUuid[U1] = $p1[0];
+    $lines = render(withTables($p1));
+    check(Hardware::places($byUuid) === [U1 => 'hardware', U2 => 'hardware', U3 => 'third'] && count(records($lines)) === 1 &&
+        strpos(records($lines)[0], 'trafficpriority-idle-' . U1) !== false,
+        'P1 with nothing else wrong: Calls idle keeps its place, 46 first, Video third - and its record written: ' .
+        json_encode([Hardware::places($byUuid), records($lines)]));
+    Hardware::$tool = false;
+    Hardware::$serial = null;
 
     echo ($failed ? "$failed of $checks checks failed\n" : "$checks checks passed\n");
     exit($failed ? 1 : 0);

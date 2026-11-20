@@ -9,7 +9,9 @@ pf_print_state.c prints them - every mark as 0x00, the value not being in the st
 reads, as an XGS 3300 on 26.7.9 showed) and /tmp/rules.error. Each class is found by its label alone,
 a rule written commented out is not one placed, and another rule's counters are never added to a
 class's; a connection pf marked coming in is counted once, when a class pf holds rules for marks; and
-a rule set pf refused is told from one it took by the two files' times.
+a rule set pf refused is told from one it took by the two files' times. And each class's groups and
+users, applications and categories with their tables, or why they have none, what pf holds in each table
+now - each asked once, none for a class switched off - and whether the two plugins are installed.
 
     python3 tools/test-status.py"""
 import importlib.util
@@ -150,6 +152,36 @@ with tempfile.TemporaryDirectory() as tmp:
     check('pf states: each connection marked coming in counted once, whatever the class\'s mark',
           [status.marked(STATES, marks) for marks in ({'0xb8'}, {'0x88'}, {'0x00'}, {'0xb8', '0x20'})], [2, 2, 2, 2])
     check('pf states: no class marking, 0', (status.marked(STATES, set()), status.marked(IN_MARKED, set())), (0, 0))
+
+    # pfctl -vv -s Tables as FreeBSD's pfctl_table.c prints it (print_table(), print_tstats(), its main branch):
+    # each active table's flags, a tab and its name, then its counters - every table's count in one call
+    stats = ''.join('\t%s [ Packets: 0                  Bytes: 0                  ]\n' % op for op in (
+        'In/Block:   ', 'In/Pass:    ', 'In/XPass:   ', 'Out/Block:  ', 'Out/Pass:   ', 'Out/XPass:  '))
+    TABLES = ''.join('%s\t%s\n\tAddresses:   %d\n\tCleared:     Thu Nov 20 10:00:00 2026\n'
+                     '\tReferences:  [ Anchors: 0                  Rules: %d                  ]\n'
+                     '\tEvaluations: [ NoMatch: 0                  Match: 0                  ]\n%s'
+                     % (flags, name, n, refs, stats) for flags, name, n, refs in (
+                         ('-pa-r--', 'appcontrol_Zoom', 14, 2), ('-pa-r--', 'uid_alice', 1, 1),
+                         ('-pa---C', 'appcontrol_cat_VoIP', 0, 0), ('-pa-r--', 'sshlockout@sshlockout', 7, 1)))
+    check('pfctl -vv -s Tables: each table\'s count, one in an anchor left out',
+          status.pf_tables(TABLES), {'appcontrol_Zoom': 14, 'uid_alice': 1, 'appcontrol_cat_VoIP': 0})
+    check('pfctl -vv -s Tables: nothing to read, or pf not asked', (status.pf_tables(''), status.pf_tables(None)), ({}, None))
+    ran = []
+
+    def answer():
+        ran.append(1)
+        return TABLES
+    count = status.table_counter(answer)
+    check('the counter: pf asked once for every table, each count from that answer, a table pf does not hold none',
+          ([count('appcontrol_Zoom'), count('uid_alice'), count('appcontrol_cat_VoIP'), count('uid_bob')], len(ran)),
+          ([14, 1, 0, None], 1))
+    asked_one = []
+    original = status.pf_table
+    status.pf_table = lambda name: asked_one.append(name) or 5
+    count = status.table_counter(lambda: None)
+    check('the counter: when that answer cannot be read, each table asked on its own', (count('uid_alice'), asked_one),
+          (5, ['uid_alice']))
+    status.pf_table = original
     check('pf states: pf not asked, nothing', (status.marked(None, {'0xb8'}), status.marked(None, set())), (None, None))
 
     got = status.status(config, rules, PF, project, STATES, errors)
@@ -220,6 +252,104 @@ with tempfile.TemporaryDirectory() as tmp:
     check('status: no rules file, pf not asked: said, and every class at nothing',
           (gone['rules_file'], gone['pf'], gone['marked'], sum(c['rules'] + c['written'] for c in gone['classes'])),
           (False, False, None, 0))
+
+    # groups and users, applications and categories: each one's table or why it has none, what pf holds in each
+    # table now - asked once a table, and not for a class switched off - and whether the two plugins are installed
+    alice = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a02'
+    gone = '7a1c2e30-5b6d-4e8f-9a0b-1c2d3e4f5a07'
+    with open(config, 'w', encoding='utf-8') as handle:
+        handle.write(
+            '<opnsense><OPNsense><TrafficPriority><general><enabled>1</enabled></general><classes>'
+            '<class uuid="%s"><enabled>1</enabled><description>Calls</description><dscp>46</dscp><users>%s</users>'
+            '<application>Zoom,Netflix</application><categories>VoIP</categories></class>'
+            '<class uuid="%s"><enabled>1</enabled><description>Gone</description><dscp>34</dscp><users>%s</users></class>'
+            '<class uuid="%s"><enabled>0</enabled><description>Off</description><dscp>40</dscp><users>%s</users>'
+            '<application>Teams</application></class>'
+            '</classes></TrafficPriority>'
+            '<UserIdentity><general><enabled>1</enabled></general><users><user uuid="%s"><enabled>1</enabled>'
+            '<name>alice</name><alias>uid_alice</alias></user></users></UserIdentity>'
+            '<AppControl><general><classify>1</classify></general></AppControl>'
+            '<Firewall><Alias><aliases>'
+            '<alias><name>uid_alice</name><type>external</type><enabled>1</enabled><description>User Identity: user alice'
+            '</description></alias>'
+            '<alias><name>appcontrol_Zoom</name><type>external</type><enabled>1</enabled><description>Application Control: '
+            'Zoom</description></alias>'
+            '<alias><name>appcontrol_cat_VoIP</name><type>external</type><enabled>1</enabled><description>Application '
+            'Control: category VoIP</description></alias>'
+            '<alias><name>appcontrol_Teams</name><type>external</type><enabled>1</enabled><description>Application '
+            'Control: Teams</description></alias>'
+            '</aliases></Alias></Firewall></OPNsense></opnsense>' % (U1, alice, U2, gone, U3, alice, alice))
+    asked = []
+
+    def counts(table):
+        asked.append(table)
+        return {'uid_alice': 1, 'appcontrol_Zoom': 14}.get(table)
+
+    got = status.status(config, rules, PF, project, None, errors, counts=counts,
+                        installed={'identity': True, 'appcontrol': True})
+    rows = {c['uuid']: c for c in got['classes']}
+    check('status: each item of a class - its table and what pf holds in it, or why it has none',
+          [(i['kind'], i['name'], i['table'], i['why'], i['count']) for i in rows[U1]['tables']],
+          [('user', 'alice', 'uid_alice', '', 1), ('application', 'Zoom', 'appcontrol_Zoom', '', 14),
+           ('application', 'Netflix', '', 'no-table', None), ('category', 'VoIP', 'appcontrol_cat_VoIP', '', None)])
+    check('status: each table asked once, the table of a class switched off alone not asked, its count none',
+          (sorted(asked), [(i['table'], i['count']) for i in rows[U3]['tables']]),
+          (['appcontrol_Zoom', 'appcontrol_cat_VoIP', 'uid_alice'], [('uid_alice', None), ('appcontrol_Teams', None)]))
+    check('status: a class with no table for its users now - idle, the users\' side; one with them, not',
+          (rows[U2]['idle'], rows[U2]['tables'][0]['why'], rows[U1]['idle']), ('users', 'row-gone', ''))
+    with open(config, encoding='utf-8') as handle:
+        text = handle.read()
+    off = os.path.join(tmp, 'off.xml')
+    with open(off, 'w', encoding='utf-8') as handle:
+        handle.write(text.replace('<TrafficPriority><general><enabled>1</enabled>', '<TrafficPriority><general><enabled>0</enabled>', 1))
+    rows_off = {c['uuid']: c for c in status.status(off, rules, PF, project, None, errors, counts=counts,
+                                                    installed={'identity': True, 'appcontrol': True})['classes']}
+    check('status: Traffic Priority off - no class idle, as the next filter reload writes no class\'s rule at all (PY2)',
+          (rows_off[U2]['idle'], rows_off[U2]['tables'][0]['why']), ('', 'row-gone'))
+    check('status: whether os-useridentity and os-appcontrol are installed, as given, and the tables Application Control '
+          'keeps now - Zoom, Teams and the category VoIP', got['others'],
+          {'identity': True, 'appcontrol': True, 'appcontrol_tables': 3})
+    bare = os.path.join(tmp, 'bare.xml')
+    with open(bare, 'w', encoding='utf-8') as handle:
+        handle.write(CONFIG)
+    check('status: no table of Application Control\'s in Firewall: Aliases, or config.xml unreadable - none it keeps, '
+          'so the page can say so', (status.keeps(bare), status.keeps(rules), status.keeps(os.path.join(tmp, 'none.xml'))),
+          (0, 0, 0))
+    check('status: the count in the answer the page reads',
+          status.status(bare, rules, PF, project, None, errors, installed={'identity': True, 'appcontrol': True})['others'],
+          {'identity': True, 'appcontrol': True, 'appcontrol_tables': 0})
+    check('status: their models looked for where they install them', (status.sources.IDENTITY_MODEL,
+                                                                     status.sources.APPCONTROL_MODEL),
+          ('/usr/local/opnsense/mvc/app/models/OPNsense/UserIdentity/UserIdentity.xml',
+           '/usr/local/opnsense/mvc/app/models/OPNsense/AppControl/AppControl.xml'))
+    # os-appcontrol removed, its settings and an alias of its left: the line of the Classes tab and each item's
+    # reason agree - both read its model's file (P6)
+    got = status.status(config, rules, PF, project, None, errors, counts=counts,
+                        installed={'identity': True, 'appcontrol': False})
+    check('status: Application Control not installed, its settings left - its items say so, as the Classes tab does',
+          (got['others'], [(i['name'], i['table'], i['why']) for i in got['classes'][0]['tables']]),
+          ({'identity': True, 'appcontrol': False, 'appcontrol_tables': 3},
+           [('alice', 'uid_alice', ''), ('Zoom', '', 'no-appcontrol'), ('Netflix', '', 'no-appcontrol'),
+            ('VoIP', '', 'no-appcontrol')]))
+    got = status.status(config, rules, PF, project, None, errors, counts=counts)
+    check('status: neither installed here, by their files - the Classes tab and every item say so',
+          (got['others'], sorted({i['why'] for c in got['classes'] for i in c['tables']})),
+          ({'identity': False, 'appcontrol': False, 'appcontrol_tables': 3}, ['no-appcontrol', 'no-identity']))
+    check('status: pf holding no such table - no count', [i['count'] for i in status.status(
+        config, rules, PF, project, None, errors, counts=lambda t: None,
+        installed={'identity': True, 'appcontrol': True})['classes'][0]['tables']], [None, None, None, None])
+    hw = status.status(config, placed, PF, project, None, errors, model=xgs, result=kept, counts=counts)['hardware']
+    check('status: the switch - a class of users with no table now, which the last reload did not record as left idle: '
+          'no place', (hw['classes'][U2]['why'], [d['dscp'] for d in hw['dscps']]), ('rule', [46]))
+    recorded = os.path.join(tmp, 'recorded.debug')
+    with open(placed, encoding='utf-8') as handle:
+        text = handle.read()
+    with open(recorded, 'w', encoding='utf-8') as handle:
+        handle.write(text + '# match in inet from {any} to {any} label "trafficpriority-idle-%s" # Traffic Priority: Gone - '
+                     'makes no rule: no table for its groups and users now: row-gone\n' % U2)
+    hw = status.status(config, recorded, PF, project, None, errors, model=xgs, result=kept, counts=counts)['hardware']
+    check('status: the switch - the class the reload left idle, by its record, keeps its place after the one the file holds',
+          (hw['classes'][U2]['why'], hw['classes'][U2]['idle'], [d['dscp'] for d in hw['dscps']]), ('hardware', True, [46, 34]))
 
     with open(config, 'w', encoding='utf-8') as handle:
         handle.write('<opnsense><OPNsense><TrafficPriority><classes><class uuid="%s"><description>Unflagged</description>'

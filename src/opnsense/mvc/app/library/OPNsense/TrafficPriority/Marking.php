@@ -54,8 +54,36 @@ use OPNsense\Firewall\Util;
  *    other means than the page, so each field is taken here only in a form that cannot break a line
  *    or the grammar - a class with another is not written, and problem() says which field.
  *  - A class narrows what it marks: an interface, a source, a destination, a port or a DSCP to
- *    arrive with. One with none of them would mark every connection, both ways, every download with
- *    them; the page refuses it at the save, and it is not written (narrows()).
+ *    arrive with - or groups and users, applications or categories. One with none of them would mark
+ *    every connection, both ways, every download with them; the page refuses it at the save, and it is
+ *    not written (narrows()).
+ *
+ * GROUPS AND USERS, APPLICATIONS AND CATEGORIES (svc-2-12, top-08). A class may name groups and users of
+ * os-useridentity, and applications and categories of os-appcontrol: their pf tables, which those
+ * plugins make and fill, are the rule's source and destination (Sources resolves them at every filter
+ * reload; neither plugin's settings or tables are written here):
+ *
+ *   match in on igb1 inet from $uid_staff to $appcontrol_Zoom scrub ( set-tos 0xb8 )
+ *       label "trafficpriority-<the class's UUID>" # Traffic Priority: Calls
+ *
+ *  - Groups and users are where the connections come from: User Identity's tables hold the addresses it
+ *    maps to them, their devices. They take the place of Source, which stays any (problem() 'sources'):
+ *    pf ANDs nothing within a rule's source, and two sources would be read as either.
+ *  - Applications and categories are where they go: Application Control's tables hold the servers nDPI
+ *    named as them. They take the place of Destination likewise ('destinations').
+ *  - Each table goes in as its alias, by name, and OPNsense's own Rule writes it as the alias's macro,
+ *    $name (Rule.php:61-66, 87-93 in 26.7 and 26.7.9), which OPNsense defines in the rules file, with its
+ *    table, for every alias of config.xml, switched on or not (filter_generate_aliases(),
+ *    filter.inc:574-627: the table at 619, the macro at 621) - a name Rule does not know as an alias it
+ *    writes commented out (Rule.php:94-98), so a rule never names a table pfctl is not given. Only the
+ *    tables Sources finds the other plugin's own, External and switched on are written at all.
+ *  - A class whose groups and users have no table now, or whose applications and categories have none,
+ *    makes no rule - never one from every source or to every destination. The rules hook says so in the
+ *    system log, and the page says why for each. It keeps its place in the switch (Hardware::places()),
+ *    and the reload records that it left the class idle in the rules file itself, as a line pf never
+ *    reads (idleRecord()), for apply.py to keep that place too.
+ *  - pf fixes a connection's mark when it opens. A connection opened before its device's address joined
+ *    a user's table, or before its server joined an application's, keeps the mark it opened with.
  */
 class Marking
 {
@@ -63,6 +91,8 @@ class Marking
     const PRIORITY = 0;
     /* each rule's label: this, then its class's UUID - the page counts a class's rules by it */
     const LABEL = 'trafficpriority-';
+    /* the label of the line recording a class a filter reload left idle: this, then its class's UUID */
+    const IDLE_LABEL = 'trafficpriority-idle-';
     /* each rule's description, before the class's own */
     const DESCR = 'Traffic Priority: ';
     /* the protocols a port may be given for: pfctl refuses a port on any other (parse.y:5309), and
@@ -72,7 +102,8 @@ class Marking
     const NO_SEQUENCE = 100000;
     /* a class's fields, as config.xml and the model have them, and as problem() reads them */
     const FIELDS = ['enabled', 'sequence', 'description', 'interface', 'ipprotocol', 'protocol', 'source_net',
-        'source_port', 'destination_net', 'destination_port', 'match_dscp', 'dscp'];
+        'source_port', 'destination_net', 'destination_port', 'match_dscp', 'dscp', 'users', 'application',
+        'categories'];
 
     /* where log() writes: the system log, or what a test puts here, function ($priority, $message) */
     public static $log = null;
@@ -203,10 +234,12 @@ class Marking
 
     /**
      * Whether a class narrows what it marks: an interface, a source or a destination other than any, a
-     * port, or a DSCP it arrives with. One with none of them would mark every connection that comes in
-     * on any interface, both ways - every download among them - and upstream networks and Wi-Fi
-     * treat a mark such as EF as voice. The page refuses such a class at the save; one written by other
-     * means is not written (problem(): 'everything'). Neither the protocol nor the IP version counts.
+     * port, a DSCP it arrives with, or groups and users, applications or categories. One with none of
+     * them would mark every connection that comes in on any interface, both ways - every download among
+     * them - and upstream networks and Wi-Fi treat a mark such as EF as voice. The page refuses such a
+     * class at the save; one written by other means is not written (problem(): 'everything'). Neither the
+     * protocol nor the IP version counts. A class narrowed by tables alone makes no rule while it has none
+     * (rules()), so it never marks more than they hold.
      */
     public static function narrows(array $class)
     {
@@ -215,7 +248,22 @@ class Marking
             || self::addresses($class['destination_net'] ?? '') !== ['any']
             || self::port($class['source_port'] ?? '') !== ''
             || self::port($class['destination_port'] ?? '') !== ''
-            || trim((string)($class['match_dscp'] ?? '')) !== '';
+            || trim((string)($class['match_dscp'] ?? '')) !== ''
+            || !empty(Sources::items($class['users'] ?? ''))
+            || !empty(Sources::items($class['application'] ?? ''))
+            || !empty(Sources::items($class['categories'] ?? ''));
+    }
+
+    /**
+     * Whether a class names groups or users (their tables its source), and applications or categories
+     * (theirs its destination): [names users, names applications or categories].
+     */
+    public static function tabled(array $class)
+    {
+        return [
+            !empty(Sources::items($class['users'] ?? '')),
+            !empty(Sources::items($class['application'] ?? '')) || !empty(Sources::items($class['categories'] ?? '')),
+        ];
     }
 
     /**
@@ -349,8 +397,15 @@ class Marking
      *   ports        a port without TCP or UDP
      *   interface    an interface field that names none
      *   address      an address field that names none
+     *   users        a groups and users field holding what is not a row ID of User Identity's
+     *   application  an application or category field holding what is no name nDPI gives: a line break
+     *   sources      groups or users beside a source other than any: both say where connections come from
+     *   destinations applications or categories beside a destination other than any
      *   everything   nothing narrows it: it would mark every connection (narrows())
      *   family       no source, destination and IP version fit together
+     *
+     * Whether the tables a class names are there now is not a problem of the class: Sources says that,
+     * at each filter reload, and rules() writes nothing while one side has none.
      */
     public static function problem(array $class, $uuid)
     {
@@ -385,6 +440,19 @@ class Marking
         if (self::addresses($class['source_net'] ?? '') === null || self::addresses($class['destination_net'] ?? '') === null) {
             return 'address';
         }
+        if (Sources::users($class['users'] ?? '') === null) {
+            return 'users';
+        }
+        if (Sources::names($class['application'] ?? '') === null || Sources::names($class['categories'] ?? '') === null) {
+            return 'application';
+        }
+        list($users, $apps) = self::tabled($class);
+        if ($users && self::addresses($class['source_net'] ?? '') !== ['any']) {
+            return 'sources';
+        }
+        if ($apps && self::addresses($class['destination_net'] ?? '') !== ['any']) {
+            return 'destinations';
+        }
         if (!self::narrows($class)) {
             return 'everything';
         }
@@ -396,12 +464,30 @@ class Marking
 
     /**
      * The rules of one class, as OPNsense's registerFilterRule() takes them; none when problem() says
-     * why. $key is markKey()'s: the FilterRule key that writes the mark on this OPNsense.
+     * why. $key is markKey()'s: the FilterRule key that writes the mark on this OPNsense. $tables is
+     * Sources::resolve()'s for the class - its 'from' the tables of its groups and users, its 'to' those of
+     * its applications and categories, each null when the class names none: a class that names them and
+     * has no table on one side now makes no rule, and one given no $tables at all has none.
      */
-    public static function rules(array $class, $uuid, $key)
+    public static function rules(array $class, $uuid, $key, $tables = null)
     {
         if (self::problem($class, $uuid) !== null || !in_array($key, ['scrub', 'dn'], true)) {
             return [];
+        }
+        $ends = ['from' => $class['source_net'] ?? '', 'to' => $class['destination_net'] ?? ''];
+        list($users, $apps) = self::tabled($class);
+        foreach (['from' => $users, 'to' => $apps] as $side => $named) {
+            if (!$named) {
+                continue;
+            }
+            $found = is_array($tables) && is_array($tables[$side] ?? null) ? $tables[$side] : [];
+            $names = array_values(array_unique(array_filter($found, function ($name) {
+                return is_string($name) && preg_match(Sources::TABLE, $name);
+            })));
+            if (empty($names)) {
+                return [];
+            }
+            $ends[$side] = implode(',', $names);
         }
         $mark = 'set-tos ' . self::tos(self::dscp($class['dscp']));
         $base = [
@@ -434,7 +520,7 @@ class Marking
             $base['tos'] = self::tos(self::dscp($match));
         }
         $rules = [];
-        foreach (self::combinations($class['source_net'] ?? '', $class['destination_net'] ?? '', $class['ipprotocol'] ?? '') as $pair) {
+        foreach (self::combinations($ends['from'], $ends['to'], $class['ipprotocol'] ?? '') as $pair) {
             $rule = $base;
             $rule['ipprotocol'] = $pair[2];
             if ($pair[0] !== '') {
@@ -446,6 +532,36 @@ class Marking
             $rules[] = $rule;
         }
         return $rules;
+    }
+
+    /**
+     * The line a filter reload writes into the rules file for a class it left idle - no rule only because
+     * its groups and users, or its applications and categories, have no table now (problem() null,
+     * Sources::idle()) - as registerFilterRule() takes it: a match rule registered disabled, which OPNsense
+     * writes commented out (FilterRule.php:42, Rule.php:161-164), as it writes a scheduled rule out of its
+     * time, disabled and described "[FIN]" (filter.inc:245-262). pf never reads it. apply.py reads it
+     * (hardware.py's idle_in()), so that the switch keeps the class's place as this reload kept it
+     * (Hardware::places()), the record and the rules coming from one reload in one file. A record written
+     * anywhere else by the hook could come from a run that is no reload: Firewall: Rules lists the
+     * automatic rules by calling every plugin's hook (list_non_mvc_rules.php), and leaves a disabled rule
+     * out of the list. $why is what the system log says of it. null when the class's ID is not a UUID.
+     */
+    public static function idleRecord(array $class, $uuid, $why)
+    {
+        if (self::label($uuid) === null) {
+            return null;
+        }
+        $text = self::description($class['description'] ?? '') ?? '';
+        return [
+            'type' => 'match',
+            'direction' => 'in',
+            'quick' => false,
+            'disabled' => true,
+            'disablereplyto' => true,
+            'ipprotocol' => 'inet',
+            'label' => self::IDLE_LABEL . strtolower((string)$uuid),
+            'descr' => self::DESCR . $text . ' - makes no rule: ' . preg_replace('/[\r\n]+/', ' ', (string)$why),
+        ];
     }
 
     /**

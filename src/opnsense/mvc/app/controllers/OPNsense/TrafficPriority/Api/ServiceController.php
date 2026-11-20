@@ -40,7 +40,9 @@ class ServiceController extends ApiControllerBase
      * filter reload and what pf holds now (status.py, by the class's label), and - when the class makes
      * no rule - why, as the rules hook decides it (Marking::problem(), and 'key' when this OPNsense has
      * no key for the mark); and its place in the switch's queues (status.py's hardware: why_not for the
-     * whole switch, else the class's own); the page words it
+     * whole switch, else the class's own); and its groups and users, applications and categories, each
+     * with its table and what pf holds in it, or why it has none, and the side with no table now (idle);
+     * the page words it
      */
     public function searchAppliedAction()
     {
@@ -77,6 +79,9 @@ class ServiceController extends ApiControllerBase
                 'bytes' => (int)($pf['bytes'] ?? 0),
                 'switch_not' => (string)($hardware['why_not'] ?? 'unknown'),
                 'switch' => is_array($places[strtolower((string)$uuid)] ?? null) ? $places[strtolower((string)$uuid)] : null,
+                /* its groups and users, applications and categories: each one's table, or why it has none */
+                'tables' => array_values(array_filter(is_array($pf['tables'] ?? null) ? $pf['tables'] : [], 'is_array')),
+                'idle' => in_array($pf['idle'] ?? '', ['users', 'apps'], true) ? $pf['idle'] : '',
             ];
         }
         return $this->searchRecordsetBase($rows, ['description', 'dscp'], 'sequence');

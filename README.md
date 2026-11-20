@@ -15,7 +15,7 @@
 
 # Traffic Priority for OPNsense
 
-Priority for chosen traffic - voice, games, the firewall's own management. The goal is strict priority where that traffic actually flows, in the queues of an XGS appliance's coprocessor and switch, which forwarded traffic never leaves. The first part marks the chosen connections with a DSCP, through pf; the second, on an XGS 3300 with os-xgs-npu, gives the first two DSCPs a queue of their own in the switch - strict, or weighted with a guaranteed minimum - setting the DSCP of every other IPv4 connection to 0 meanwhile, and follows Firewall: Shaper into the switch where the switch can do what a rule does.
+Priority for chosen traffic - voice, games, the firewall's own management. The goal is strict priority where that traffic actually flows, in the queues of an XGS appliance's coprocessor and switch, which forwarded traffic never leaves. The first part marks the chosen connections with a DSCP, through pf; the second, on an XGS 3300 with os-xgs-npu, gives the first two DSCPs a queue of their own in the switch - strict, or weighted with a guaranteed minimum - setting the DSCP of every other IPv4 connection to 0 meanwhile, and follows Firewall: Shaper into the switch where the switch can do what a rule does; the third chooses connections by who opens them and what they go to - groups and users of os-useridentity, applications and categories of os-appcontrol - through those plugins' own tables.
 
 > ~~**Planned - nothing here runs yet.** This repository was opened on 2026-10-22 to hold
 > Traffic Priority as a plugin of its own. No code has been written or moved into it, and there is no
@@ -25,14 +25,21 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
 > marked with a DSCP by pf. Tried the same day on a lab appliance, an XGS 3300; what was run is under
 > [What is tested](#what-is-tested).
 >
-> **The second part, written, not released (2026-11-19):** the switch's queues, a minimum for a class,
-> and Firewall: Shaper followed. It needs os-xgs-npu's switch tool (`switch_qos.py`, in os-xgs-npu's
-> pull request of the same day). Both ran on the second XGS 3300 on 2026-11-19: what was measured
-> there is said below, and what was not; os-xgs-npu turning port 0's pause off itself, which the
-> minimums need, ~~has not run on an appliance yet~~ ran there too, through this plugin's Apply and
-> after a full reboot.
+> ~~**The second part, written, not released (2026-11-19):**~~ **The second part, merged 2026-11-20
+> ([#5](https://github.com/AbdelmonemAwad/os-trafficpriority/pull/5)), not released:** the switch's
+> queues, a minimum for a class, and Firewall: Shaper followed. It needs os-xgs-npu's switch tool
+> (`switch_qos.py`, ~~in os-xgs-npu's pull request of the same day~~ in os-xgs-npu's main since
+> 2026-11-20, [os-xgs-npu#1201](https://github.com/AbdelmonemAwad/os-xgs-npu/pull/1201)). Both ran on
+> the second XGS 3300 on 2026-11-19: what was measured there is said below, and what was not;
+> os-xgs-npu turning port 0's pause off itself, which the minimums need, ~~has not run on an appliance
+> yet~~ ran there too, through this plugin's Apply and after a full reboot.
+>
+> **The third part, written, not released (2026-11-20):** a class's groups and users, of os-useridentity,
+> and applications and categories, of os-appcontrol, as those plugins' pf tables - read here, never
+> written. ~~It has not run on an appliance yet: its checks ran away from one.~~ It ran on the second XGS
+> 3300, the XGS 136 and a plain OPNsense the same day: what was run is under [What is tested](#what-is-tested).
 
-<p align="center"><b>Contents:</b> <a href="#what-it-does">What it does</a> &middot; <a href="#how-a-class-marks-its-connections">How a class marks its connections</a> &middot; <a href="#the-switchs-queues">The switch's queues</a> &middot; <a href="#following-firewall-shaper">Following Firewall: Shaper</a> &middot; <a href="#on-a-sophos-xgs">On a Sophos XGS</a> &middot; <a href="#not-yet-and-why">Not yet, and why</a> &middot; <a href="#what-is-tested">What is tested</a> &middot; <a href="#installation">Installation</a> &middot; <a href="#updates">Updates</a> &middot; <a href="#where-it-fits">Where it fits</a> &middot; <a href="#licence">Licence</a></p>
+<p align="center"><b>Contents:</b> <a href="#what-it-does">What it does</a> &middot; <a href="#how-a-class-marks-its-connections">How a class marks its connections</a> &middot; <a href="#groups-and-users-applications-and-categories">Groups and users, applications and categories</a> &middot; <a href="#the-switchs-queues">The switch's queues</a> &middot; <a href="#following-firewall-shaper">Following Firewall: Shaper</a> &middot; <a href="#on-a-sophos-xgs">On a Sophos XGS</a> &middot; <a href="#not-yet-and-why">Not yet, and why</a> &middot; <a href="#what-is-tested">What is tested</a> &middot; <a href="#installation">Installation</a> &middot; <a href="#updates">Updates</a> &middot; <a href="#where-it-fits">Where it fits</a> &middot; <a href="#licence">Licence</a></p>
 
 ## What it does
 
@@ -43,8 +50,11 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
   destination (addresses, networks, aliases, an interface's network, the firewall itself), their
   ports (a number, a name, a range or an alias of ports), and the DSCP a connection arrives with
   (any by default); and the DSCP to set, EF (46) by default, one of the 21 code points Firewall:
-  Shaper names. A class has to narrow what it marks by at least one of these, the protocol and the
-  IP version aside. And a **minimum**, a percent of a full port its switch queue gets at least
+  Shaper names. And **groups and users** of os-useridentity, **applications** and **application
+  categories** of os-appcontrol, in place of the source and the destination
+  ([Groups and users, applications and categories](#groups-and-users-applications-and-categories)). A
+  class has to narrow what it marks by at least one of these, the protocol and the IP version aside. And
+  a **minimum**, a percent of a full port its switch queue gets at least
   ([The switch's queues](#the-switchs-queues)); none by default;
 - **the rules** - registered by the plugin at every filter reload (`plugins.inc.d/trafficpriority.inc`,
   the way os-blocklists registers its own), one pf `match` rule for each interface, IP version and
@@ -66,7 +76,9 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
   rather than that nothing was applied yet. And each class's **Switch queue**: queue 7 or 6, strict
   or weighted with its minimum, or why it has none - pf alone (the switch's two places taken), Best
   Effort, IPv6, or no switch os-xgs-npu sets on this appliance. A card says how many DSCPs have a
-  queue, and what the last Apply did with the switch;
+  queue, and what the last Apply did with the switch. And **Their tables**: each group, user,
+  application and category of a class, with its table and how many addresses pf holds in it now, or
+  why it has none;
 - **Firewall: Shaper** - each of its rules, read and never written, with what the switch takes of it
   and what stays with the host, and why ([Following Firewall: Shaper](#following-firewall-shaper));
 - **General** - Enabled, **off by default**: nothing is marked and nothing of the switch is set until it
@@ -140,6 +152,91 @@ running OPNsense's own rule class; where neither is there, no class is applied a
 says so. The checks write every sample class out with the rule classes of both OPNsense 26.7 and
 26.7.9 ([What is tested](#what-is-tested)).
 
+## Groups and users, applications and categories
+
+A class may name groups and users of [os-useridentity](https://github.com/AbdelmonemAwad/os-useridentity)
+and applications and categories of [os-appcontrol](https://github.com/AbdelmonemAwad/os-appcontrol):
+each plugin's own pf tables - aliases of type External it writes and fills - which this one reads at
+every filter reload and never writes (`OPNsense\TrafficPriority\Sources`; `scripts/trafficpriority/sources.py`
+for the page and the switch):
+
+- **groups and users** - User Identity's group rows and user rows, chosen in the dialog from its own
+  lists and kept by each row's ID, as os-blocklists keeps them. A row's table holds the addresses User
+  Identity has mapped to that group's users, or to that user, now, and is the class's source. Each
+  address comes from an event that named it: a domain controller's logon (event 4768) names the address
+  the user logged on from, usually IPv4 (`::ffff:a.b.c.d` in the event); a RADIUS accounting record or a
+  captive portal session names its own. A device's connections from its other addresses are not the
+  class's: a device on both IP versions prefers IPv6 where both work, and sends from temporary IPv6
+  addresses that no event names, so on such a network the class marks the user's IPv4 connections only,
+  whatever its IP version - the switch's queues are IPv4's anyway. Only the connections a user's device
+  opens are the class's, never those opened to it from elsewhere, which would otherwise take the class's
+  mark just by connecting in. They take the place of Source, which stays any: pf reads every address of a
+  rule's source as either, so a Source beside them would widen the class, not narrow it, and the page
+  refuses one at the save;
+- **applications and categories** - those Application Control keeps a table for, by the names nDPI
+  gives them: each application chosen there in Application tables or Blocked applications, or in its
+  Rules tab where it has one (os-appcontrol's third part), and applied, and every category of the
+  installed nDPI while it classifies. A table holds the servers nDPI named as that application, or as one
+  of the category, and is the class's destination. They take the place of Destination likewise. A
+  connection to a server of any of a class's applications and categories is the class's. A blocked
+  application's table holds only the servers the firewall's own resolver vouched for, and its block rule
+  stops every new connection to them, so a class that names it marks only what the block lets through -
+  with Application Control's Rules, the devices outside a rule's source;
+- **the rules** - one pf `match` rule for each interface, IP version, table of a group or a user and
+  table of an application or a category, as for a class's addresses, the rest of the class - its
+  protocol, ports, DSCP to arrive with - in each:
+
+  ```
+  match in on igb1 inet from $uid_staff to $appcontrol_Zoom scrub ( set-tos 0xb8 ) label "trafficpriority-<the class's ID>" # Traffic Priority: Calls
+  ```
+
+  OPNsense's own rule class writes each table as its alias's macro (`Rule.php:61-66`, `87-93`), which
+  OPNsense defines in the rules file with its table for every alias of config.xml (`filter.inc:619`,
+  `621`), so a rule never names a table pfctl is not given. The rules multiply: 2 groups and users, 3
+  applications and categories, 2 interfaces and both IP versions are 24 rules, and pf reads each for
+  every new connection - choose one group rather than many users, or one category rather than many
+  applications, where they mean the same;
+- **only their own tables** - a table is taken only as its plugin's alias, External and switched on,
+  while that plugin is on - User Identity's Enabled, Application Control classifying - and, for a group
+  or a user, its row switched on. Anything else adds nothing, and the Applied tab says why for each: the
+  plugin not installed or off, the row switched off or gone, not applied there yet, an application not
+  chosen there for a table, the table switched off, an alias of the row's name that is not User
+  Identity's;
+- **no table, no rule** - a class whose groups and users have no table now, or whose applications and
+  categories have none, makes no rule: never one from every source or to every destination. The system
+  log says so at each filter reload. On an XGS 3300 the class keeps its switch queue all the same - its
+  settings decide the places, as at the save, so the other plugins' state never moves the queues of
+  the classes after it - and marks again once its tables are there: their plugin's Apply reloads the
+  filter, which writes its rules again, with no Apply here. Kept with the queue, for a class that marks
+  nothing meanwhile: the switch's entry for its DSCP, the rule setting the DSCP of every IPv4 connection
+  no class marks to 0, and with minimums port 0's pause off (1 to 4 % of the line rate, and more
+  retransmissions). The reload records the class it left so in its rules file, a line written commented
+  out that pf never reads, and Apply takes the switch's places from that same file;
+- **a mark is fixed when a connection opens** - a connection a device opened before its address joined
+  a user's table keeps the mark it opened with; where os-xgs-npu's cut list holds User Identity's
+  tables, such a connection is cut as the address joins one, and opens again marked. A connection to an
+  application's server is marked only when the server is in the table as the connection opens, and keeps
+  that for its whole life. nDPI names a connection 10 to 70 seconds after it begins - Application
+  Control's windows of a minute - and the server then stays in the table for Application Control's
+  Expire (an hour by default) after the last new connection named to it. So:
+  - the first connection to a server new to the table is not marked, for its whole life - a call's
+    media among them, one long flow that begins with the call;
+  - a connection opened to that server while it is in the table is marked;
+  - nor is one opened once an Expire has passed with no new connection named to its server: a call going
+    on, however long, does not keep its server in the table;
+  - to mark a call from its first packet, add beside the class one with the same DSCP by the call's own
+    ports, or by an alias of the servers its service publishes (Firewall: Aliases, URL Table); a longer
+    Expire in Application Control keeps a server in the table longer between calls;
+- **the page** - the Applied tab's Their tables column: each group, user, application and category of a
+  class, with its table and how many addresses pf holds in it now - every table's count from one
+  `pfctl -vv -s Tables`, rather than every address of each listed to count it - or why it has none. The
+  Classes tab says when os-useridentity or os-appcontrol is not installed: Groups and
+  users, or Applications and Application categories, then offer nothing - and when Application Control is
+  installed and keeps no table at all, not classifying or not applied there yet. Installed is read from each
+  plugin's model file, by the page, the dialog and the rules hook alike - each plugin's removal leaves its
+  settings in config.xml, its rows and its Enabled among them - and a choice saved before a removal stays
+  in the class, marked as not installed.
+
 ## The switch's queues
 
 On an XGS 3300 with os-xgs-npu, Apply gives the switch what the classes ask for, through os-xgs-npu's
@@ -161,7 +258,9 @@ runs and what it did.
   every filter reload, to the DSCPs of the classes switched on that make a rule, in the page's order
   (by sequence, then as listed): IPv4 - the entry picks out IPv4 - and above Best Effort, so not Best
   Effort, CS1 or LE. Classes of one DSCP share its queue. A class of a third DSCP is marked by pf and
-  nothing more, and the page says so;
+  nothing more, and the page says so. A class of groups and users, applications or categories takes its
+  place by the same order; one whose tables are missing now keeps it
+  ([Groups and users, applications and categories](#groups-and-users-applications-and-categories));
 - **while a class has a queue in the switch, every IPv4 connection no class marks has its DSCP set
   to 0, both ways: the switch queues every frame by its DSCP** - its entry picks out every frame with
   a class's DSCP, whoever marked it: a computer marking its own traffic EF, a download arriving with
@@ -325,7 +424,27 @@ stays counted while it is open.
   first on one interface was not checked. The Set DSCP help says so.
 - **IPv6 in hardware** - see above: a marked IPv6 connection stays with the host.
 - **the XGS 136's switch** - only read by os-xgs-npu, for the reasons above; the page says so.
-- **users and applications** - a later part, after os-useridentity and os-appcontrol.
+- **groups and users, applications and categories on an appliance** - ~~written on 2026-11-20 and run in
+  the checks alone, not yet on an appliance~~ run on 2026-11-20 on the second XGS 3300, the XGS 136 and a
+  plain OPNsense ([What is tested](#what-is-tested)); left: a real video call. ~~neither the classes' rules on the tables os-useridentity
+  and os-appcontrol fill there, nor the two tests their part of the plan sets - a video call and a large
+  download on one port, the call in the high queue; two users on two devices, a high class for one, its
+  share under load higher and its minimum kept. The call is to be run both ways: to a server already in
+  the application's table, and as a first call to a server new to it, which stays unmarked.~~
+- **the first call to a server new to an application's table** - not marked, for its whole life, and no
+  more is the first after an Expire (above). pf fixes a connection's mark when it opens and has no way to
+  change it after; only cutting the connection would, and nothing here cuts one. What would mark it is
+  the server in the table before its first connection, which Application Control does not do: it puts a
+  server there once a connection to it has been named. Until it does, a class by the call's own ports, or
+  by an alias of the servers its service publishes, marks a call from its first packet.
+- **an application's servers, as nDPI names them** - Application Control puts a server in the table of
+  an application it does not block by the name its connections carry, read by nDPI from their packets -
+  the server name a TLS or QUIC client sends among them; only for an application it blocks does it ask
+  the firewall's own resolver first. So a server two applications share is in both tables, and its
+  connections of either are marked; and a device that writes an application's name to a server of its
+  own has its connections to that server marked too. A class without a minimum can then take a whole
+  port: a class of an application is best given a minimum, or narrowed by its groups and users or its
+  source. The dialog's help says so.
 
 ## What is tested
 
@@ -342,7 +461,7 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   photographed: [dscp-2026-11-17.png](docs/images/measurements/dscp-2026-11-17.png). The same test
   had found Marked now at 0 during a marked run - pfctl prints every marked state `set-tos 0x00` -
   and the count now reads only that a mark is set;
-- **the rules** - `tools/test-rules.php`, 121 checks, run with OPNsense's own Plugin, FilterRule, Rule
+- **the rules** - `tools/test-rules.php`, ~~182~~ 183 checks, run with OPNsense's own Plugin, FilterRule, Rule
   and Util of every release from 26.7 to 26.7.9, from opnsense/core's tags, and of opnsense/core's
   main branch of that day, under PHP 8.5. For sample classes it checks the line OPNsense
   writes - match, in, never quick, no state, no reply-to, the DSCP's ECN bits clear, the label -
@@ -353,12 +472,12 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   ending in a backslash, a class that narrows nothing, a DSCP out of range, 0 to match, a class
   without an ID; nothing while off, the default; a rule OPNsense refuses leaving the reload and the
   other classes alone; and the key each release writes the mark with;
-- **the model and the page's API** - `tools/test-mvc.php`, 67 checks, with stand-ins for OPNsense's
+- **the model and the page's API** - `tools/test-mvc.php`, 82 checks, with stand-ins for OPNsense's
   MVC base: each of those refusals at the save, on the field it concerns, a class read whole when
   any field of it changed, and the message of OPNsense's own field type kept where it gave one; the
   status the page is given, an OPNsense with no key for the mark said, why each class makes no rule,
   and Apply's filter reload;
-- **the page's numbers** - `tools/test-status.py`, 39 checks: `status.py` reading a `rules.debug`, a
+- **the page's numbers** - `tools/test-status.py`, 56 checks: `status.py` reading a `rules.debug`, a
   `pfctl -v -s rules` and a `pfctl -v -s states` as OPNsense and pfctl write them, by each class's
   label - a connection with a mark set coming in counted once, the mark printed `set-tos 0x00` as
   pfctl prints every one, one going out or with no mark not counted, and nothing while no class
@@ -367,14 +486,14 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
 - **the switch's queues** (2026-11-19) - `tools/test-rules.php` writes, on an XGS 3300 with the switch
   tool, while a class has a queue in the switch, one rule setting every IPv4 connection's DSCP to 0
   before every class's rule, and none while none has - a class that makes no rule, Best Effort or CS1,
-  IPv6 alone - on another model or with no switch tool. `tools/test-hardware.py`, 45 checks: the places
+  IPv6 alone - on another model or with no switch tool. `tools/test-hardware.py`, 52 checks: the places
   taken from the classes the rules file holds a rule for, while it holds that one; the queue, strict or
   weighted, and the ports' scheduling; a minimum beside a strict class, or minimums past 100, giving the
   switch nothing; Firewall: Shaper's parts after them; the weight sequence, every queue at least one
   turn, 128 at most. `tools/test-shaper-map.py`, 58 checks: Firewall: Shaper configurations - pipes with
   a bandwidth, a mask and a scheduler, queues with weights and masks, rules by interface, direction,
   addresses, ports and DSCP, one after another on an interface - and for each rule what the switch takes,
-  the limit's step, and why the rest stays with the host. `tools/test-apply.py`, 31 checks: `apply.py`
+  the limit's step, and why the rest stays with the host. `tools/test-apply.py`, 35 checks: `apply.py`
   with a stand-in for os-xgs-npu's switch tool - the settings written and applied, "running" while it
   runs, a refusal said in the tool's words, a tool out of time or without a word, a refused plan or a
   rule set pf refused, a rules file without the rule setting DSCP 0, what the plugin set put back when
@@ -384,12 +503,42 @@ On 2026-11-17, from this branch - on a lab appliance first, then the checks:
   class without a place, past 100 and beside a strict class; the status read with the switch read again
   for the cards and without for the grids; and Apply setting the switch in the background after the
   filter reload;
-- **the strings** - `tools/check-strings.py`: each of the 193 strings the GUI shows - the page, the
+- **groups and users, applications and categories** (2026-11-20) - `tools/test-rules.php`, with
+  OPNsense's own rule classes of 26.7 and 26.7.9: a class's groups and users and its applications and
+  categories written as their tables' macros, a rule for every pair, both IP versions, a table named
+  twice taken once, the rest of the class in each rule; no rule at all - never one widened to every
+  source or destination - for each reason a table is missing or not taken, with the reason in the log;
+  groups and users beside a source, applications beside a destination, and values no table can be
+  found by, written by other means, refused; an alias whose name pf could not hold not taken; the
+  rule setting DSCP 0 still written for a class with no table, which keeps its place, and the line
+  recording it in the rules file, commented out, for a class with nothing else wrong with it alone - a
+  class with no table and a source port no rule could hold has no place and no such line (the review's
+  P1); and a plugin removed, its settings left in config.xml, read as not installed by its model file.
+  `tools/test-sources.py`, 49 checks: `sources.py` against the same cases. `tools/test-fields.php`, 16
+  checks: the dialog's lists of User Identity's groups and users and Application Control's
+  applications and categories, read from the configuration - one switched off there marked, an empty
+  enabled element among them, one saved and gone kept and marked, nothing where the plugin has none or
+  is not installed, and a choice saved before its removal kept, marked as not installed.
+  `tools/test-mvc.php`: the refusals at the save, never one for what the tables hold now, and the page's
+  API passing each class's tables. `tools/test-status.py`: each item's table, what pf holds in each -
+  every table's count from one `pfctl -vv -s Tables`, as FreeBSD's source prints it - the two plugins
+  installed or not by their model files, how many tables Application Control keeps, and no class idle
+  while Traffic Priority is off. `tools/test-hardware.py` and `tools/test-apply.py`: a class the reload
+  left idle keeping its place in the switch by that line of the rules file, and the review's P1 given
+  the places the hook gave it. `tools/test-page.py`, 28 checks: the page's script under node - Their
+  tables, In pf - what pf holds first, then what the next filter reload writes - and the switch queue of
+  such a class, the lines that say a plugin is not installed or Application Control keeps no table, and
+  what the help, the Applied tab and this README say of a user's table and of the first call to a
+  server new to an application's table. `tools/test-install.py`: the model's version step run by
+  `install.sh` and by the package's `post-install.sh`, and every test of `tools/` left out of the
+  archive an appliance takes;
+- **the strings** - `tools/check-strings.py`: each of the 240 strings the GUI shows - the page, the
   dialog's labels, help and the DSCPs' names, the model's messages, the menu, the ACL and the PHP's -
   is listed in `source.json`. The first part's have their Arabic in opnsense-arabic (pull request
-  [#80](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/80), merged 2026-11-18); 70 of the
-  second part's do not yet, and `tools/check-strings.py` lists them;
-- **the installation** - `tools/test-install.py`, 34 checks: `install/install.sh`,
+  [#80](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/80), merged 2026-11-18), and the second
+  part's (pull request [#86](https://github.com/AbdelmonemAwad/opnsense-arabic/pull/86), merged
+  2026-11-20); 47 of the third part's have none yet: `tools/check-strings.py` lists them;
+- **the installation** - `tools/test-install.py`, 36 checks: `install/install.sh`,
   `install/uninstall.sh`, the package's `post-install.sh` and `post-deinstall.sh`, and
   `place-menu.sh`, run in a temporary root with stand-ins for `service`, `configctl` and `pfctl` -
   every file laid down with its mode and taken away again, the menu in XGS or Firewall, nothing
@@ -406,11 +555,49 @@ Later that day a review's fixes, and the behaviours newly tested, were taken out
 of them - in Marking, the hook, the model, the page's API, `status.py`, the strings check, the
 install scripts and `place-menu.sh` - and the tests caught 74. The one left changes nothing: without
 its own `rm` of the menu file, `uninstall.sh`'s `rm -rf` of the model's directory takes the file
-with it.
+with it. On 2026-11-20 the third part's review fixes were checked the same way: their tests, run on the
+code before the fixes, failed on each - and pass on it now.
 
-Not tested: the XGS 136; IPv6 on an appliance; `install.sh` and `uninstall.sh` on an appliance; the
-page in a browser; and, of the second part, what the second XGS 3300 did not measure on 2026-11-19
-([The switch's queues](#the-switchs-queues))~~ - os-xgs-npu turning port 0's pause off itself among it~~.
+On the appliances and a plain OPNsense, the same day, after one review and one round of its fixes, from
+this branch, as a user meets it - the second XGS 3300 with os-xgs-npu's main of the day (743c45a9, its switch
+tool), os-useridentity's and os-appcontrol's mains, the bench VM sending through it to the XGS 136 behind
+Port8; the XGS 136 itself; and a plain OPNsense in qemu without os-xgs-npu - each put back as found after it:
+
+- **a call to a server already in Zoom's table** (Port8 at 100 Mbit/s by a Firewall: Shaper pipe, a class
+  for Zoom marked EF): the call at 40.0 Mbit/s with nothing lost beside 120 Mbit/s of download, queue 7 and
+  the TCAM entry counting its datagrams; without the class it lost 37 % (24.6 Mbit/s), as phase 2 measured;
+- **a first call to a server new to the table**: it stayed in queue 0 for its whole life while the server
+  joined the table 55 s in, and a second stream to it was marked;
+- **a minimum** of 30 for the call: Port8 weighted, port 0's pause turned off by the switch tool at the
+  plugin's Apply, the call 27 % of the sum or more in each run, the sum 880 Mbit/s or more;
+- **a category**, Video: its table held the server and the call was marked as above;
+- **a user**, u2, mapped from the test domain: a class for u2 with a minimum of 60 took 59.2 to 59.6 % of
+  915.7 to 921.2 Mbit/s against another device in each of three uploads, queue 7 counting u2's frames, and
+  u2's downloads arrived marked; in single seconds its share fell to 43 to 52 % - recorded as measured,
+  TCP's own swings under the switch's weights. Without the class neither held 60:40;
+- **a group**, G-Staff: a device of the group marked and counted in queue 7, one outside it not;
+- **User Identity switched off**: pf kept the class's rule until the next filter reload, which wrote none and
+  said why in the system log and as a record in the rules file, the class's place in the switch kept;
+  switched on again, the rule came back with no Apply of Traffic Priority's, and a new stream was marked;
+- **the XGS 136**: the switch only read (the page says why), the class's rule from a user's table marking the
+  replies of the user's downloads on their way in, the removal leaving none of its rules and its settings
+  kept;
+- **a plain OPNsense**: an update over the main kept the main's class as it was; with no User Identity, a
+  user's class makes no rule and the page and the log say why; with it, the rule marked the user's frames
+  and no other device's; the removal ended 0.
+
+Found by that lab and fixed in this branch (aab95bc): OPNsense's legacy parser reads every element named as
+one of its list tags - alias among them, for Firewall: Aliases - as a list, so the rules hook read each
+group's and user's table as none and every class naming them made no rule, while the page, which reads
+config.xml itself, showed the tables. A list of one is now taken as its text, and `tools/test-rules.php`
+holds the case. Recorded as found: User Identity switched off and on again within one minute leaves
+os-xgs-npu's cut list nothing to add (its runs are a minute apart), so a connection opened in those
+seconds keeps its first marking until it ends.
+
+Not tested: ~~the XGS 136;~~ IPv6 on an appliance; ~~`install.sh` and `uninstall.sh` on an appliance;~~ the
+page in a browser; of the second part, what the second XGS 3300 did not measure on 2026-11-19
+([The switch's queues](#the-switchs-queues))~~ - os-xgs-npu turning port 0's pause off itself among it~~;
+~~and the third part on any appliance~~ and a real video call.
 
 ## Installation
 

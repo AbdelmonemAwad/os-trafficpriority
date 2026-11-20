@@ -5,7 +5,7 @@
 <acl>
     <page-firewall-trafficpriority>
         <name>Firewall: Traffic Priority</name>
-        <description>Allow access to traffic priority: its classes, the DSCP each marks, and firewall rules it registers</description>
+        <description>Allow access to traffic priority: its classes, the DSCP each marks, and firewall rules it registers - a class may name the groups and users of User Identity, and the page shows how many addresses each one's table holds now, so whether its users are logged on</description>
         <patterns>
             <pattern>ui/trafficpriority/*</pattern>
             <pattern>api/trafficpriority/*</pattern>

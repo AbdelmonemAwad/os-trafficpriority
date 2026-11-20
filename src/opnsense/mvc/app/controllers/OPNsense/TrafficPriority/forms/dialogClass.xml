@@ -58,6 +58,13 @@
         <help>Where connections come from: an address or a network, aliases, interface networks. any: every source.</help>
     </field>
     <field>
+        <id>class.users</id>
+        <label>Groups and users</label>
+        <type>select_multiple</type>
+        <hint>none</hint>
+        <help>Groups and users of User Identity (os-useridentity): the connections that come from the addresses it maps to them now are this class's, by User Identity's tables - not those opened to such an address. A table holds the addresses User Identity mapped, each from an event that named it - a domain controller's logon names one, usually IPv4 - so a device's connections from its other addresses, temporary IPv6 ones among them, are not the class's. They take the place of Source, which stays any. A connection keeps the mark it opened with: one a device opened before its address was mapped is not marked, the ones after it are - and where os-xgs-npu's cut list holds User Identity's tables, such a connection is cut when the address is mapped, and opens again marked. A group or a user with no table now - User Identity off or not installed, the row switched off, or not applied there yet - adds nothing; while none of them has one, the class makes no rule at all, and the Applied tab says why.</help>
+    </field>
+    <field>
         <id>class.source_port</id>
         <label>Source port</label>
         <type>text</type>
@@ -73,6 +80,23 @@
         <type>text</type>
         <style>net_selector net_selector_multi</style>
         <help>Where connections go: an address or a network, aliases, interface networks or (self), the firewall itself. any: every destination.</help>
+    </field>
+    <field>
+        <id>class.application</id>
+        <label>Applications</label>
+        <type>select_multiple</type>
+        <hint>none</hint>
+        <help>Applications Application Control (os-appcontrol) keeps a table for - those chosen there in Application tables or Blocked applications, or in its Rules tab where it has one, and applied: the connections to the servers nDPI named as one of them are this class's. They take the place of Destination, which stays any. A connection is marked only when its server is in the table as it opens, and keeps that for its whole life. nDPI names a connection 10 to 70 seconds after it begins, and its server then stays in the table for Application Control's Expire (an hour by default) after the last new connection named to it. So the first connection to a server new to the table is not marked - a call's media among them, which begins with the call - nor is one opened after an Expire without such a connection; a call going on does not keep its server in the table. To mark a call from its first packet, add beside this class one with the same DSCP by the call's own ports, or by an alias of the servers its service publishes; a longer Expire in Application Control keeps a server in the table longer between calls. A blocked application's new connections are blocked, so a class marks only those its block lets through. A server two applications share is in both tables. And a device names its own connections: one that writes an application's name to a server of its own has its connections to that server marked too - a class without a minimum can then take a whole port, so give such a class a minimum, or narrow it by Groups and users or Source. While none of them has a table, the class makes no rule at all.</help>
+    </field>
+    <field>
+        <id>class.categories</id>
+        <label>Application categories</label>
+        <type>select_multiple</type>
+        <hint>none</hint>
+        <help>Categories of nDPI's, each a table Application Control (os-appcontrol) keeps of the servers of every application it named in the category - one for every category, while it classifies. Beside Applications, a connection to either is this class's. What Applications says of when a connection is marked, of servers shared, and of names a device writes itself, holds here too.</help>
+        <grid_view>
+            <visible>false</visible>
+        </grid_view>
     </field>
     <field>
         <id>class.destination_port</id>

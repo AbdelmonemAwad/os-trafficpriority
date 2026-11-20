@@ -19,6 +19,13 @@
  * switch queues every frame by its DSCP, whoever marked it - by one rule, registered before every
  * class's rule, so that the classes' own marks come after it and are the ones their connections keep.
  *
+ * A class that names groups and users of os-useridentity, or applications and categories of
+ * os-appcontrol, takes their pf tables as its source or destination, as config.xml holds them at this
+ * reload (OPNsense\TrafficPriority\Sources) - and makes no rule while one side has none, which the
+ * system log says, and which the rules file records by a line pf never reads (Marking::idleRecord()),
+ * for apply.py to keep the class's switch place as this reload keeps it. Neither plugin's settings or
+ * tables are written here.
+ *
  * A hook that throws stops the filter reload: OPNsense calls it with nothing around it
  * (plugins.inc:244-259), and the reload is what loads every rule of the owner's. So nothing here may
  * throw: whatever goes wrong is said in the system log, and the reload goes on without the class it
@@ -28,6 +35,7 @@
 use OPNsense\Firewall\Plugin;
 use OPNsense\TrafficPriority\Hardware;
 use OPNsense\TrafficPriority\Marking;
+use OPNsense\TrafficPriority\Sources;
 
 function trafficpriority_firewall(Plugin $fw)
 {
@@ -56,6 +64,19 @@ function trafficpriority_firewall(Plugin $fw)
         return;
     }
 
+    /* the other plugins' tables as config.xml holds them now, read once for every class; none when they
+       cannot be read, so a class that names them makes no rule and every other is written as before */
+    try {
+        $aliases = Sources::aliases($config);
+        $rows = Sources::rows($config);
+        $plugins = Sources::plugins($config);
+    } catch (\Throwable $e) {
+        Marking::log(LOG_ERR, 'Traffic Priority: the tables of User Identity and Application Control not read: ' .
+            $e->getMessage());
+        $aliases = $rows = [];
+        $plugins = ['identity' => null, 'appcontrol' => null];
+    }
+
     /* while a class has a place, every IPv4 connection's DSCP set to 0 first; the classes' marks after it */
     foreach ($clearing as $rule) {
         try {
@@ -69,10 +90,30 @@ function trafficpriority_firewall(Plugin $fw)
     foreach ($classes as $uuid => $class) {
         $name = preg_replace('/[\r\n]+/', ' ', (string)($class['description'] ?? ''));
         try {
-            $rules = Marking::rules($class, (string)$uuid, $key);
+            $tables = Sources::resolve($class, $aliases, $rows, $plugins);
+            $rules = Marking::rules($class, (string)$uuid, $key, $tables);
             if (empty($rules)) {
-                Marking::log(LOG_WARNING, sprintf('Traffic Priority: class "%s" makes no rule (%s)', $name,
-                    Marking::problem($class, (string)$uuid) ?? 'unknown'));
+                $why = Marking::problem($class, (string)$uuid);
+                $idle = $why === null && Sources::idle($tables);
+                if ($idle) {
+                    /* the side with no table, and the first reason the page gives of it */
+                    $users = $tables['from'] !== null && empty($tables['from']);
+                    $first = '';
+                    foreach ($tables['items'] as $item) {
+                        if (in_array($item['kind'], $users ? ['group', 'user'] : ['application', 'category'], true)) {
+                            $first = $item['why'];
+                            break;
+                        }
+                    }
+                    $why = sprintf('no table for its %s now: %s', $users ? 'groups and users' : 'applications and categories', $first);
+                }
+                Marking::log(LOG_WARNING, sprintf('Traffic Priority: class "%s" makes no rule (%s)', $name, $why ?? 'unknown'));
+                /* an idle class keeps its place in the switch (Hardware::places()): this reload says so in the
+                   rules file it writes, by a line pf never reads, which apply.py takes its places from */
+                $record = $idle ? Marking::idleRecord($class, (string)$uuid, $why) : null;
+                if ($record !== null) {
+                    $fw->registerFilterRule(Marking::PRIORITY, $record);
+                }
                 continue;
             }
             foreach ($rules as $rule) {

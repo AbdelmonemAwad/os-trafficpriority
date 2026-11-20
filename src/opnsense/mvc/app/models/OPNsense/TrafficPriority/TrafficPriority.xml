@@ -4,7 +4,8 @@
 -->
 <model>
     <mount>//OPNsense/TrafficPriority</mount>
-    <version>1.1.0</version>
+    <!-- 1.2.0 (2026-11-20): users, application and categories (Migrations/M1_2_0.php) -->
+    <version>1.2.0</version>
     <description>Traffic priority</description>
     <items>
         <!--
@@ -97,6 +98,33 @@
                     <EnableAlias>Y</EnableAlias>
                     <ValidationMessage>A port number, a name, an alias of ports or a range.</ValidationMessage>
                 </destination_port>
+                <!--
+                    The groups and users of os-useridentity (top-08): its rows, by their uuid
+                    (FieldTypes/UserIdentityField.php); their tables are the class's source, so Source stays
+                    any beside them (TrafficPriority.php). None by default.
+                -->
+                <users type="OPNsense\TrafficPriority\FieldTypes\UserIdentityField">
+                    <Required>N</Required>
+                    <Multiple>Y</Multiple>
+                    <ValidationMessage>Choose groups and users of User Identity, or none.</ValidationMessage>
+                </users>
+                <!--
+                    The applications (svc-2-12) and categories (top-08) of os-appcontrol, by the names nDPI
+                    gives them (FieldTypes/AppControlField.php); their tables are the class's destination,
+                    so Destination stays any beside them. None by default.
+                -->
+                <application type="OPNsense\TrafficPriority\FieldTypes\AppControlField">
+                    <Required>N</Required>
+                    <Multiple>Y</Multiple>
+                    <Kind>application</Kind>
+                    <ValidationMessage>Choose applications Application Control keeps a table for, or none.</ValidationMessage>
+                </application>
+                <categories type="OPNsense\TrafficPriority\FieldTypes\AppControlField">
+                    <Required>N</Required>
+                    <Multiple>Y</Multiple>
+                    <Kind>category</Kind>
+                    <ValidationMessage>Choose categories Application Control keeps a table for, or none.</ValidationMessage>
+                </categories>
                 <!--
                     The DSCPs Firewall: Shaper names (TrafficShaper.xml), by number. pf cannot match 0 -
                     it takes it for no DSCP asked - so it is not offered here.

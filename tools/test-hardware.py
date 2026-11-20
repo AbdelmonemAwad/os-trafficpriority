@@ -7,7 +7,10 @@ them, and the rules file the last filter reload wrote (the places are taken from
 a rule for, while it holds the one setting every IPv4 connection's DSCP to 0, which the rules hook
 writes while a class has a place; tools/test-rules.php holds the hook to it). A class whose rule the
 file does not hold has no place; Best Effort, the DSCPs below it, IPv6 alone and a class switched off
-neither; a third DSCP is pf's alone; and without that rule in the file, no class has one. Strict classes in the top queues; minimums
+neither; a third DSCP is pf's alone; and without that rule in the file, no class has one. A class the
+reload left idle - its groups and users, or applications and categories, with no table - keeps its place
+all the same, as the hook keeps it, by the line the reload records it with in the same file (idle_in()).
+Strict classes in the top queues; minimums
 weighted - and the two never mixed, nor minimums past 100: the switch is then given nothing, and why is
 said. Firewall: Shaper's parts only where no class has a minimum, every place has one, and they fit.
 And the weight sequence - each queue its share of turns, queue 0 the rest, every queue at least once, no
@@ -39,9 +42,9 @@ def cls(uuid, dscp='46', sequence='100', minimum='', enabled='1', ipprotocol='in
             'ipprotocol': ipprotocol}
 
 
-def plan(classes, places, shares=None, written=None):
-    """The plan with every class's rule written, unless told which were."""
-    return hardware.plan(classes, places, {c['uuid'] for c in classes} if written is None else written, shares)
+def plan(classes, places, shares=None, written=None, idle=()):
+    """The plan with every class's rule written, unless told which were - and which are idle."""
+    return hardware.plan(classes, places, {c['uuid'] for c in classes} if written is None else written, shares, idle)
 
 
 def queues(p):
@@ -75,6 +78,13 @@ check('a rule for one DSCP, as the version before wrote it: not that rule',
       hardware.from_rules('match in inet from {any} to {any} tos 0xb8 scrub ( set-tos 0x00 ) label '
                           '"trafficpriority-clear-46"'), (False, set()))
 check('no rules file', hardware.from_rules(''), (False, set()))
+# the line the hook writes for a class it left idle, as tools/test-rules.php has OPNsense write it
+RECORD = ('# match in inet from {any} to {any} label "trafficpriority-idle-%s" # Traffic Priority: Calls - makes no rule: '
+          'no table for its groups and users now: identity-off')
+check('a class the reload left idle: its record, a line commented out, read - and taken for no rule of the class\'s',
+      (hardware.idle_in(RULES + RECORD % U3), hardware.from_rules(RULES + RECORD % U3)), ({U3}, (True, {U1, U2})))
+check('a record not commented out - the hook never writes one so - is none; no record, none',
+      (hardware.idle_in((RECORD % U3)[2:]), hardware.idle_in(RULES), hardware.idle_in('')), (set(), set(), set()))
 
 # ---- the places, as the rules hook takes them, from the classes the file holds a rule for ----
 cleared, written = hardware.from_rules(RULES)
@@ -91,6 +101,21 @@ check('Best Effort, CS1 and LE below it, IPv6 alone, a class switched off, a DSC
       'IPv4 and IPv6 has one', hardware.places_of(
           [cls('a', '0'), cls('b', '8'), cls('c', '1'), cls('d', '46', ipprotocol='inet6'), cls('e', '34', enabled='0'),
            cls('f', 'x'), cls('g', '10', ipprotocol='inet46')], set('abcdefg'), True), [10])
+
+# ---- a class whose groups and users, or applications and categories, have no table now ----
+check('a class idle - no table on one side now, so no rule in the file - keeps its place, as the hook keeps it; the '
+      'next DSCP does not take it', hardware.places_of([cls('a', '46'), cls('b', '34'), cls('c', '40')], {'b', 'c'}, True,
+                                                       {'a'}), [46, 34])
+check('...and none without the rule setting DSCP 0', hardware.places_of([cls('a', '46')], set(), False, {'a'}), [])
+check('an idle class switched off, or of Best Effort: no place all the same',
+      hardware.places_of([cls('a', '46', enabled='0'), cls('b', '0'), cls('c', '34')], {'c'}, True, {'a', 'b'}), [34])
+p = plan([cls('a', '46', minimum='30'), cls('b', '34', minimum='20')], [46, 34], written={'b'}, idle={'a'})
+check('an idle class with a minimum: its queue weighted, its minimum counted - no mix with the next class, as the model '
+      'saw it at the save', (queues(p), p['refused'], p['classes']['a']['why'], p['classes']['a']['idle'],
+                             p['classes']['b']['idle']),
+      ({46: (7, 'weighted', 30), 34: (6, 'weighted', 20)}, '', 'hardware', True, False))
+p = plan([cls('a', '46'), cls('b', '34')], [46], written={'b'}, idle=set())
+check('the same class not idle - its rule simply not in the file: no place, as before', p['classes']['a']['why'], 'rule')
 
 # ---- which class has a place ----
 p = plan([cls('a', '46'), cls('b', '34'), cls('c', '40')], [46, 34])

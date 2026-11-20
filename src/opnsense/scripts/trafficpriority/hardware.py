@@ -18,6 +18,13 @@ labelled "trafficpriority-clear": the switch queues every frame by its DSCP, who
 the classes' connections may carry one. This reads the file (from_rules()): the switch is given the
 classes' DSCPs only while the file holds that rule, and the places are taken as the hook takes them,
 from the classes whose own rules the file holds (places_of()) - a class it holds no rule for has none.
+But a class the reload left idle - no rule only because its groups and users, or its applications and
+categories, had no table, nothing else wrong with it - keeps its place: the hook gives it one by its
+settings, as the model does at the save, and writes a line for it into the same file, commented out, that
+pf never reads (idle_in(), Marking::idleRecord()); its rules come back with the other plugin's tables - at
+that plugin's Apply, whose filter reload writes them - with no Apply of this plugin's, the switch's entry
+already there. Its queue holds nothing meanwhile. A class with something else wrong with it gets no such
+line, and no place, here as there.
 
 WHAT THE SWITCH CAN DO, measured by os-xgs-npu on the second XGS 3300 (2026-11-11, 2026-11-17):
   - a frame the coprocessor sends into the switch waits in queue 0 whatever its DSCP, unless a TCAM
@@ -60,6 +67,8 @@ MAX_TURNS = 128             # the chip's weight table
 BELOW = {0: 'best-effort', 1: 'below-default', 8: 'below-default'}     # Hardware::BELOW
 CLEAR = re.compile(r'label "trafficpriority-clear"')       # Hardware::LABEL
 LABELED = re.compile(r'label "trafficpriority-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"')
+# Marking::IDLE_LABEL: the line recording a class the reload left idle
+IDLED = re.compile(r'label "trafficpriority-idle-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"')
 
 
 def dscp(value):
@@ -129,38 +138,56 @@ def from_rules(text):
     return cleared, written
 
 
-def places_of(classes, written, cleared):
+def idle_in(text):
+    """The classes the last filter reload left idle, as it recorded them in its rules file: for each, a line
+    OPNsense wrote commented out - a rule the hook registered disabled - labelled
+    "trafficpriority-idle-<its UUID>" (Marking::idleRecord()). The hook writes one only for a class with
+    nothing wrong with it but tables missing on one side; only such a line, commented, counts."""
+    out = set()
+    for line in (text or '').splitlines():
+        if not line.lstrip().startswith('#'):
+            continue
+        found = IDLED.search(line)
+        if found:
+            out.add(found.group(1))
+    return out
+
+
+def places_of(classes, written, cleared, idle=()):
     """The DSCPs with a queue of their own, in order, as the rules hook takes them (Hardware::places()):
-    those of the classes switched on whose rules the file holds (written), in the page's order, IPv4,
-    above Best Effort, two at most. None while the file does not hold the rule that sets every IPv4
-    connection's DSCP to 0 (cleared): the switch then holds no class's queue."""
+    those of the classes switched on whose rules the file holds (written) - or that the reload left idle,
+    recorded in the same file (idle_in()) - in the page's order, IPv4, above Best Effort, two at most. None
+    while the file does not hold the rule that sets every IPv4 connection's DSCP to 0 (cleared): the
+    switch then holds no class's queue."""
     out = []
     if not cleared:
         return out
     for c in ordered(classes):
         d = dscp(c.get('dscp'))
-        if c['uuid'] not in written or d is None or d in BELOW or (c.get('ipprotocol') or 'inet') == 'inet6':
+        if (c['uuid'] not in written and c['uuid'] not in idle) or d is None or d in BELOW or \
+                (c.get('ipprotocol') or 'inet') == 'inet6':
             continue
         if d not in out and len(out) < ENTRIES:
             out.append(d)
     return out
 
 
-def plan(classes, places, written, shares=None):
+def plan(classes, places, written, shares=None, idle=()):
     """What the switch is given for the classes: {'dscps': [{'dscp', 'queue', 'kind' ('strict' or
     'weighted'), 'percent', 'from' ('minimum', 'shaper' or None), 'classes': [uuid, ...]}],
     'classes': {uuid: {'why', 'dscp', 'queue', 'kind', 'percent', 'minimum': the class's own or None,
-    'minimum_why': '' | 'not-hardware'}}, 'mode': 0-7 or None, 'weights': [...] or None,
-    'percent': {queue: percent}, 'refused': '' | 'mix' | 'over', 'shares_why': '' | 'minimum-wins' |
-    'beside-strict' | 'share-over'}. places: places_of(); written: from_rules(). shares: {dscp: percent} from
-    Firewall: Shaper. With 'refused', nothing is for the switch."""
+    'minimum_why': '' | 'not-hardware', 'idle': True when the last filter reload left it idle}},
+    'mode': 0-7 or None, 'weights': [...] or None, 'percent': {queue: percent}, 'refused': '' | 'mix' |
+    'over', 'shares_why': '' | 'minimum-wins' | 'beside-strict' | 'share-over'}. places: places_of();
+    written: from_rules(); idle: the classes the last filter reload left idle (idle_in()), which keep their
+    place. shares: {dscp: percent} from Firewall: Shaper. With 'refused', nothing is for the switch."""
     shares = shares or {}
     rows = {}
     for c in classes:
         d = dscp(c.get('dscp'))
         if not switched_on(c):
             why = 'off'
-        elif c['uuid'] not in written:
+        elif c['uuid'] not in written and c['uuid'] not in idle:
             why = 'rule'
         elif d is None:
             why = 'dscp'
@@ -175,7 +202,8 @@ def plan(classes, places, written, shares=None):
         minimum = minimum_of(c.get('minimum'))
         rows[c['uuid']] = {'why': why, 'dscp': d, 'queue': None, 'kind': None, 'percent': None,
                            'minimum': minimum,
-                           'minimum_why': 'not-hardware' if minimum is not None and why not in ('hardware', 'off') else ''}
+                           'minimum_why': 'not-hardware' if minimum is not None and why not in ('hardware', 'off') else '',
+                           'idle': switched_on(c) and c['uuid'] in idle and c['uuid'] not in written}
     held = [c for c in ordered(classes) if rows[c['uuid']]['why'] == 'hardware']
     taken = [d for d in places if any(rows[c['uuid']]['dscp'] == d for c in held)]
     out = {'dscps': [], 'classes': rows, 'mode': None, 'weights': None, 'percent': {}, 'refused': '',
