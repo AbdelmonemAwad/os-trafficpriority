@@ -152,6 +152,36 @@ with tempfile.TemporaryDirectory() as tmp:
     check('pf states: each connection marked coming in counted once, whatever the class\'s mark',
           [status.marked(STATES, marks) for marks in ({'0xb8'}, {'0x88'}, {'0x00'}, {'0xb8', '0x20'})], [2, 2, 2, 2])
     check('pf states: no class marking, 0', (status.marked(STATES, set()), status.marked(IN_MARKED, set())), (0, 0))
+
+    # pfctl -vv -s Tables as FreeBSD 15.1's pfctl_table.c prints it (print_table(), print_tstats()): each active
+    # table's flags, a tab and its name, then its counters - every table's count in one call
+    stats = ''.join('\t%s [ Packets: 0                  Bytes: 0                  ]\n' % op for op in (
+        'In/Block:   ', 'In/Pass:    ', 'In/XPass:   ', 'Out/Block:  ', 'Out/Pass:   ', 'Out/XPass:  '))
+    TABLES = ''.join('%s\t%s\n\tAddresses:   %d\n\tCleared:     Thu Nov 20 10:00:00 2026\n'
+                     '\tReferences:  [ Anchors: 0                  Rules: %d                  ]\n'
+                     '\tEvaluations: [ NoMatch: 0                  Match: 0                  ]\n%s'
+                     % (flags, name, n, refs, stats) for flags, name, n, refs in (
+                         ('-pa-r--', 'appcontrol_Zoom', 14, 2), ('-pa-r--', 'uid_alice', 1, 1),
+                         ('-pa---C', 'appcontrol_cat_VoIP', 0, 0), ('-pa-r--', 'sshlockout@sshlockout', 7, 1)))
+    check('pfctl -vv -s Tables: each table\'s count, one in an anchor left out',
+          status.pf_tables(TABLES), {'appcontrol_Zoom': 14, 'uid_alice': 1, 'appcontrol_cat_VoIP': 0})
+    check('pfctl -vv -s Tables: nothing to read, or pf not asked', (status.pf_tables(''), status.pf_tables(None)), ({}, None))
+    ran = []
+
+    def answer():
+        ran.append(1)
+        return TABLES
+    count = status.table_counter(answer)
+    check('the counter: pf asked once for every table, each count from that answer, a table pf does not hold none',
+          ([count('appcontrol_Zoom'), count('uid_alice'), count('appcontrol_cat_VoIP'), count('uid_bob')], len(ran)),
+          ([14, 1, 0, None], 1))
+    asked_one = []
+    original = status.pf_table
+    status.pf_table = lambda name: asked_one.append(name) or 5
+    count = status.table_counter(lambda: None)
+    check('the counter: when that answer cannot be read, each table asked on its own', (count('uid_alice'), asked_one),
+          (5, ['uid_alice']))
+    status.pf_table = original
     check('pf states: pf not asked, nothing', (status.marked(None, {'0xb8'}), status.marked(None, set())), (None, None))
 
     got = status.status(config, rules, PF, project, STATES, errors)

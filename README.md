@@ -225,8 +225,9 @@ for the page and the switch):
     ports, or by an alias of the servers its service publishes (Firewall: Aliases, URL Table); a longer
     Expire in Application Control keeps a server in the table longer between calls;
 - **the page** - the Applied tab's Their tables column: each group, user, application and category of a
-  class, with its table and how many addresses pf holds in it now (`pfctl -t <table> -T show`), or why
-  it has none. The Classes tab says when os-useridentity or os-appcontrol is not installed: Groups and
+  class, with its table and how many addresses pf holds in it now - every table's count from one
+  `pfctl -vv -s Tables`, rather than every address of each listed to count it - or why it has none. The
+  Classes tab says when os-useridentity or os-appcontrol is not installed: Groups and
   users, or Applications and Application categories, then offer nothing - and when Application Control is
   installed and keeps no table at all, not classifying or not applied there yet. Installed is read from each
   plugin's model file, by the page, the dialog and the rules hook alike - each plugin's removal leaves its

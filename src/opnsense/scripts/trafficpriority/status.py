@@ -14,7 +14,7 @@ queues on an XGS appliance - what Apply gives the switch for the settings as the
 (apply.py's decision: each class's place, each rule of Firewall: Shaper with what the switch takes of
 it and what stays with the host), what the last Apply did, and whether the settings changed since.
 And for each class's groups and users, applications and categories (sources.py), its table or why it
-has none, and how many addresses pf holds in the table now (pfctl -t <table> -T show) - and whether
+has none, and how many addresses pf holds in the table now (pfctl -vv -s Tables, once) - and whether
 os-useridentity and os-appcontrol are installed at all.
 
     status.py
@@ -57,6 +57,9 @@ CREATED = re.compile(r'^\s+\[ Inserted: .*State Creations: (\d+)\s*\]')
 # (pf_ioctl.c:5931, 5965, 6105). Nor does pf keep a note of which rules a state matched - only what
 # they set on it, a normalization rule's mark too (pf.c:6288).
 MARKED = re.compile(r', set-tos 0x[0-9a-f]{2}\b')
+# pfctl -vv -s Tables: a table's line - its flags (c p a i r h C, or -), a tab, its name - and its count
+TABLE_HEAD = re.compile(r'^[-cpairhC]{7}\t(\S+)$')
+TABLE_ADDRESSES = re.compile(r'^\tAddresses:\s+(\d+)\s*$')
 # os-xgs-npu's model: where it is installed, its drivers give a connection in hardware its pf mark
 PROJECT = '/usr/local/opnsense/mvc/app/models/OPNsense/XGS/XGS.xml'
 
@@ -105,6 +108,53 @@ def pf_table(name):
     if done.returncode != 0:
         return None
     return len([line for line in done.stdout.splitlines() if line.strip()])
+
+
+def pf_tables(text):
+    """{table: how many addresses pf holds in it} from pfctl -vv -s Tables, which prints each active table of
+    the main ruleset as its seven flags, a tab and its name, then its counters, the first "\\tAddresses:" and
+    the number (pfctl_table.c's print_table() and print_tstats() in FreeBSD 15.1) - every table's count in one
+    call, where -T show prints every address of each to count it. A table in an anchor (name@anchor) is not
+    one of the aliases' and is left out; None when nothing could be read."""
+    if text is None:
+        return None
+    out = {}
+    current = None
+    for line in text.splitlines():
+        head = TABLE_HEAD.match(line)
+        if head:
+            current = None if '@' in head.group(1) else head.group(1)
+            continue
+        found = TABLE_ADDRESSES.match(line)
+        if found and current is not None:
+            out[current] = int(found.group(1))
+            current = None
+    return out
+
+
+def table_counter(run=None):
+    """A table's name -> how many addresses pf holds in it now, or None when pf holds no such table: every
+    table's count from one pfctl -vv -s Tables, asked the first time a count is wanted; when that answer
+    cannot be read, each table asked by pfctl -t <table> -T show (pf_table()). run: what gives pfctl's
+    answer, for the tests."""
+    known = {}
+
+    def count(name):
+        if 'tables' not in known:
+            known['tables'] = pf_tables((run or pf_tables_text)())
+        if not known['tables']:
+            return pf_table(name)
+        return known['tables'].get(name)
+    return count
+
+
+def pf_tables_text():
+    """pfctl -vv -s Tables, or None when pf could not be asked."""
+    try:
+        done = subprocess.run([PFCTL, '-vv', '-s', 'Tables'], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
 
 
 def tos(dscp):
@@ -253,7 +303,7 @@ def check_switch():
 
 def status(config=None, rules=None, pf_text=None, project=None, states=None, errors=None, model=None, result=None,
            check=None, counts=None, installed=None):
-    """counts: a table's name -> how many addresses pf holds in it (pf_table()); installed: whether
+    """counts: a table's name -> how many addresses pf holds in it (table_counter()); installed: whether
     os-useridentity and os-appcontrol are, {'identity', 'appcontrol'} - from their models' files when not
     given - which both the lines of the Classes tab and each item's reason follow."""
     installed = sources.installed() if installed is None else installed
@@ -264,7 +314,7 @@ def status(config=None, rules=None, pf_text=None, project=None, states=None, err
     on, classes = read
     lines = written(rules)
     held = loaded(pf_text)
-    counts = counts or pf_table
+    counts = counts or table_counter()
     counted = {}
     for entry in classes:
         entry.update({'written': 0, 'not_placed': 0, 'rules': 0, 'packets': 0, 'bytes': 0, 'states': 0,
