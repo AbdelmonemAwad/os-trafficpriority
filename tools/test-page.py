@@ -173,6 +173,13 @@ def texts():
           'texts (help): groups and users take the place of Source, applications that of Destination')
     check("os-xgs-npu's cut list holds User Identity's tables" in form and 'keeps the mark it opened with' in form,
           'texts (help): a connection keeps its mark; the cut list where os-xgs-npu has it')
+    check('A table holds the addresses User Identity mapped' in form and 'usually IPv4' in form and
+          'temporary IPv6 ones among them, are not the class' in form and 'not those opened to such an address' in form,
+          'texts (help): a user\'s table holds the addresses User Identity mapped - a device\'s other addresses, IPv6 '
+          'among them, not the class\'s - and only what the device opens')
+    readme = open(os.path.join(ROOT, 'README.md'), encoding='utf-8').read()
+    check('usually IPv4' in readme and 'temporary IPv6' in readme and 'never those opened to it' in readme,
+          'README: the same of a user\'s table')
     check('10 to 70 seconds' in form and 'Expire' in form and 'A server two applications share is in both tables' in form,
           'texts (help): when nDPI names a connection, how long a server stays, servers shared')
     check('give such a class a minimum' in form and 'a whole port' in form,
