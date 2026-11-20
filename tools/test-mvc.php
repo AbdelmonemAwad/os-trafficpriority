@@ -247,6 +247,7 @@ namespace {
     }
     require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Marking.php';
     require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Hardware.php';
+    require $root . '/src/opnsense/mvc/app/library/OPNsense/TrafficPriority/Sources.php';
     require $root . '/src/opnsense/mvc/app/models/OPNsense/TrafficPriority/TrafficPriority.php';
     require $root . '/src/opnsense/mvc/app/controllers/OPNsense/TrafficPriority/Api/ServiceController.php';
 
