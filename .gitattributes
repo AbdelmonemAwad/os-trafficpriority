@@ -28,10 +28,16 @@ tools/check-code-language.py export-ignore
 tools/check-private-data.py export-ignore
 tools/check-strings.py export-ignore
 tools/check-uninstall.sh export-ignore
+tools/test-apply.py export-ignore
+tools/test-fields.php export-ignore
+tools/test-hardware.py export-ignore
 tools/test-install.py export-ignore
 tools/test-mvc.php export-ignore
+tools/test-page.py export-ignore
 tools/test-rules.php export-ignore
 tools/test-self-update.py export-ignore
+tools/test-shaper-map.py export-ignore
+tools/test-sources.py export-ignore
 tools/test-status.py export-ignore
 # README.md is left out too, as in os-blocklists since 2026-10-30: nothing on an appliance reads it.
 # LICENSE stays, the terms the code is given under.

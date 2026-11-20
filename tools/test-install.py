@@ -342,5 +342,17 @@ with tempfile.TemporaryDirectory() as tmp:
           box.called(), ['service configd restart', 'configctl filter reload skip_alias hook=no', 'pfctl -s rules'])
     check('post-deinstall.sh: none of its rules left - said', (rc, 'none of its rules is left' in out), (0, True))
 
+# What an appliance carries is `git archive` of a commit: none of the repository's own tools and tests but the one
+# run on a firewall to build a package (.gitattributes says why), every test added since among them
+ignored = set()
+with open(os.path.join(ROOT, '.gitattributes'), encoding='utf-8') as handle:
+    for line in handle:
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == 'export-ignore':
+            ignored.add(parts[0].lstrip('/'))
+check('.gitattributes: every file of tools/ left out of the archive an appliance takes, make-package.sh alone kept',
+      sorted(f for f in os.listdir(os.path.join(ROOT, 'tools'))
+             if os.path.isfile(os.path.join(ROOT, 'tools', f)) and 'tools/' + f not in ignored), ['make-package.sh'])
+
 print('%d of %d checks failed' % (failures, checks) if failures else '%d checks passed' % checks)
 sys.exit(1 if failures else 0)
