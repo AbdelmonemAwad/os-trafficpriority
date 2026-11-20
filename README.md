@@ -29,7 +29,8 @@ Priority for chosen traffic - voice, games, the firewall's own management. The g
 > and Firewall: Shaper followed. It needs os-xgs-npu's switch tool (`switch_qos.py`, in os-xgs-npu's
 > pull request of the same day). Both ran on the second XGS 3300 on 2026-11-19: what was measured
 > there is said below, and what was not; os-xgs-npu turning port 0's pause off itself, which the
-> minimums need, has not run on an appliance yet.
+> minimums need, ~~has not run on an appliance yet~~ ran there too, through this plugin's Apply and
+> after a full reboot.
 
 <p align="center"><b>Contents:</b> <a href="#what-it-does">What it does</a> &middot; <a href="#how-a-class-marks-its-connections">How a class marks its connections</a> &middot; <a href="#the-switchs-queues">The switch's queues</a> &middot; <a href="#following-firewall-shaper">Following Firewall: Shaper</a> &middot; <a href="#on-a-sophos-xgs">On a Sophos XGS</a> &middot; <a href="#not-yet-and-why">Not yet, and why</a> &middot; <a href="#what-is-tested">What is tested</a> &middot; <a href="#installation">Installation</a> &middot; <a href="#updates">Updates</a> &middot; <a href="#where-it-fits">Where it fits</a> &middot; <a href="#licence">Licence</a></p>
 
@@ -210,8 +211,14 @@ runs and what it did.
   away first, then os-xgs-npu puts back what it set, as it found it. What cannot be put back is never
   set again: it stays in os-xgs-npu's state, put back at the next boot of the coprocessor, and the page
   says the put-back failed;
-- **not measured yet** - os-xgs-npu turning the pause off itself (for the runs above it was turned off
-  by hand), a part from a Firewall: Shaper weight with the pause off, the other front ports while one
+- **the pause turned off by os-xgs-npu itself** - measured on the second XGS 3300 on 2026-11-19 through
+  this plugin's Apply: minimums of 30 and 20 gave 58.0 against 38.8 Mbit/s by UDP, a minimum of 30
+  against the 50 left to the rest of the traffic 36.4 against 60.5, and 60 % against 40 % by TCP at line
+  rate, for 1 to 4 % of the rate and more retransmissions; strict classes alone left the pause as
+  found; after a full reboot the boot hook set it all again; and turned off, the switch read as before,
+  with nothing of the plugin's left;
+- **not measured yet** - ~~os-xgs-npu turning the pause off itself (for the runs above it was turned off
+  by hand),~~ a part from a Firewall: Shaper weight with the pause off, the other front ports while one
   is full with the pause off, and whether the switch counts its turns in frames or in bytes. Measured
   besides on 2026-11-19: pf's mark from a class into its queue - entry 3 counted 78,691 frames of a
   class's, and queue 7 sent 78,690 of them - and entry 255, behind the vendor's drop-all 254, counting
@@ -289,7 +296,8 @@ stays counted while it is open.
 - **os-xgs-npu turning port 0's pause off itself** - the switch's queues were written on 2026-11-19,
   with os-xgs-npu's switch tool, and run on the second XGS 3300 the same day; the minimums held there
   once port 0's pause was turned off by hand ([The switch's queues](#the-switchs-queues)), and the
-  switch tool now turns it off itself while it writes weights - not yet run on an appliance. Measured
+  switch tool now turns it off itself while it writes weights - ~~not yet run on an appliance~~ run on the
+  second XGS 3300 the same day through this plugin's Apply ([The switch's queues](#the-switchs-queues)). Measured
   before them, on the second XGS 3300 on 2026-11-17, with a switch entry written for the test and
   taken away after: EF from the coprocessor in queue 7, TCP at line rate. A stream marked EF took 922
   to 931 Mbit/s and left an unmarked one 0 to 16, against 370 to 564 each without the entry; the two
@@ -402,7 +410,7 @@ with it.
 
 Not tested: the XGS 136; IPv6 on an appliance; `install.sh` and `uninstall.sh` on an appliance; the
 page in a browser; and, of the second part, what the second XGS 3300 did not measure on 2026-11-19
-([The switch's queues](#the-switchs-queues)) - os-xgs-npu turning port 0's pause off itself among it.
+([The switch's queues](#the-switchs-queues))~~ - os-xgs-npu turning port 0's pause off itself among it~~.
 
 ## Installation
 
